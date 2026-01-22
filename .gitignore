@@ -1,0 +1,59 @@
+# ======================
+# OS / Editor files
+# ======================
+.DS_Store
+Thumbs.db
+*.log
+*.tmp
+*.bak
+*.swp
+*.swo
+
+# ======================
+# IDE / Editor
+# ======================
+.vscode/
+.idea/
+*.code-workspace
+
+# ======================
+# XAMPP / Local config
+# ======================
+.env
+.env.*
+phpinfo.php
+
+# ======================
+# Dependency folders
+# ======================
+/vendor/
+node_modules/
+
+# ======================
+# WordPress (jika WP)
+# ======================
+wp-config.php
+wp-content/uploads/
+wp-content/cache/
+wp-content/upgrade/
+
+# ======================
+# Cache / runtime
+# ======================
+cache/
+tmp/
+storage/
+logs/
+
+# ======================
+# Database / backup
+# ======================
+*.sql
+*.sqlite
+*.db
+
+# ======================
+# Build / compiled
+# ======================
+dist/
+build/
