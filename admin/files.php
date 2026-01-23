@@ -1,14 +1,15 @@
 <?php
-error_reporting(E_ALL);
-ini_set('display_errors', 1);
-
 require_once '../config/db.php';
 require_once '../config/functions.php';
 require_once '../includes/header.php';
 
 if(!isAdmin()) redirect('../index.php');
+if (!isset($_SESSION['active_role'])) $_SESSION['active_role'] = 'admin';
 
-// 1. Fetch locations for the dropdown
+ $activeRole = $_SESSION['active_role'];
+ $uid = $_SESSION['user_id'];
+
+// 1. Fetch locations for the dropdown (Optional, if you still use it)
  $locations = $pdo->query("SELECT * FROM locations ORDER BY room, rack, box")->fetchAll();
 
 // 2. Handle Search/Filter Logic
@@ -22,16 +23,14 @@ if (!empty($_GET['status'])) {
 
 if (!empty($_GET['search'])) {
     $searchTerm = "%" . $_GET['search'] . "%";
-    $where[] = "(f.file_name LIKE ? OR f.barcode LIKE ? OR l.room LIKE ? OR l.rack LIKE ?)";
-    $params[] = $searchTerm;
+    $where[] = "(f.file_name LIKE ? OR f.barcode LIKE ? OR f.department LIKE ?)";
     $params[] = $searchTerm;
     $params[] = $searchTerm;
     $params[] = $searchTerm;
 }
 
- $sql = "SELECT f.*, l.room, l.rack, l.box 
-        FROM files f 
-        LEFT JOIN locations l ON f.location_id = l.id ";
+ $sql = "SELECT f.* 
+        FROM files f ";
 
 if (!empty($where)) {
     $sql .= "WHERE " . implode(" AND ", $where) . " ";
@@ -43,9 +42,8 @@ if (!empty($where)) {
  $stmt->execute($params);
  $files = $stmt;
 
-// Handle Add File
+// Handle Add File (Quick Add)
 if(isset($_POST['add_file'])) {
-    
     // DEBUG: Print the raw POST data so we can see exactly what is being sent
     echo "<div style='background:#fff3cd; padding:10px; border:1px solid #ffeeba; margin-bottom:20px;'>";
     echo "<strong>DEBUG: Received Data:</strong><br>";
@@ -83,7 +81,6 @@ if(isset($_POST['add_file'])) {
 }
 ?>
 
-<!-- WRAPPER START -->
 <div class="layout-wrapper">
     <?php require_once '../includes/sidebar.php'; ?>
 
@@ -97,8 +94,8 @@ if(isset($_POST['add_file'])) {
                     <p style="margin:5px 0 0 0; color: var(--text-light);">Track and manage your physical documents.</p>
                 </div>
                 <div style="display:flex; gap:10px;">
-                    <a href="manage_locations.php" class="btn btn-secondary">Manage Locations</a>
-                    <button class="btn" onclick="document.getElementById('addModal').style.display='flex'">+ Add New File</button>
+                    <!-- <a href="manage_locations.php" class="btn btn-secondary">Manage Locations</a> -->
+                    <!-- <button class="btn" onclick="document.getElementById('addModal').style.display='flex'">+ Add New File</button> -->
                 </div>
             </div>
 
@@ -114,7 +111,7 @@ if(isset($_POST['add_file'])) {
                         <select name="status" style="width: 100%; padding: 10px; border:1px solid #ddd; border-radius:6px; background:white;">
                             <option value="">All Status</option>
                             <option value="available" <?= (isset($_GET['status']) && $_GET['status'] == 'available') ? 'selected' : '' ?>>Available</option>
-                            <option value="borrowed" <?= (isset($_GET['status']) && $_GET['status'] == 'borrowed') ? 'selected' : '' ?>>Borrowed</option>
+                            <option value="borrowed" <?= (isset($_GET['status']) && $_GET['status'] == 'borrowed') ? 'selected' : '' ?>>Borrowed/Assigned</option>
                             <option value="archived" <?= (isset($_GET['status']) && $_GET['status'] == 'archived') ? 'selected' : '' ?>>Archived</option>
                         </select>
                     </div>
@@ -129,9 +126,9 @@ if(isset($_POST['add_file'])) {
                     <thead>
                         <tr style="background: #f8f9fa; text-align: left; border-bottom: 2px solid #eee;">
                             <th style="padding: 15px 20px; font-weight:600; color: #555;">File Details</th>
-                            <th style="padding: 15px 20px; font-weight:600; color: #555;">Location</th>
-                            <th style="padding: 15px 20px; font-weight:600; color: #555;">Status & History</th>
-                            <th style="padding: 15px 20px; font-weight:600; color: #555; text-align:right;">Actions</th>
+                            <th style="padding: 15px 20px; font-weight:600; color: #555;">Allocation & Box No.</th>
+                            <th style="padding: 15px 20px; font-weight:600; color: #555;">Status</th>
+                            <th style="padding: 15px 20px; font-weight:600; color: #555;">Actions</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -151,40 +148,36 @@ if(isset($_POST['add_file'])) {
                                     </td>
                                     <td style="padding: 15px 20px; vertical-align: top;">
                                         <div style="font-size:0.9rem; color:var(--text-dark); font-weight:500;">
-                                            <?php if($row['location_id']): ?>
-                                                <span style="color:#888;">Room:</span> <?= sanitize($row['room']) ?> <br>
-                                                <span style="color:#888;">Rack:</span> <?= sanitize($row['rack']) ?> / <span style="color:#888;">Box:</span> <?= sanitize($row['box']) ?>
+                                            <?php if(!empty($row['location_text'])): ?>
+                                                <span style="color:#888;"></span> <?= sanitize($row['location_text']) ?> <br>
                                             <?php else: ?>
                                                 <span style="color:orange;">Legacy Data</span>
                                             <?php endif; ?>
+                                            <small style="color:#666; display:block; margin-top:2px;">
+                                                Retention: <?= sanitize($row['retention_period']) ?> 
+                                            </small>
                                         </div>
                                     </td>
                                     <td style="padding: 15px 20px; vertical-align: top;">
                                         <!-- Status Badge -->
                                         <div style="margin-bottom: 8px;">
                                             <span style="font-size:0.75rem; font-weight:700; padding:4px 8px; border-radius:4px; text-transform:uppercase; letter-spacing:0.5px;
-                                                background:<?= getStatusBg($row['status']) ?>; color:<?= getStatusText($row['status']) ?>;">
-                                                <?= $row['status'] ?>
+                                                background:<?= ($row['status'] == 'available') ? '#e8f5e9' : (($row['status'] == 'borrowed') ? '#ffebee' : '#f0f0f0') ?>; color:<?= ($row['status'] == 'available') ? '#2e7d32' : (($row['status'] == 'borrowed') ? '#c62828' : '#666') ?>;">
+                                                <?= ucfirst($row['status']) ?>
                                             </span>
                                         </div>
                                         
-                                        <!-- Status Details -->
+                                        <!-- Who is assigned? (If borrowed) -->
                                         <div style="font-size:0.85rem; color:#666; line-height:1.4;">
                                             <?php if($row['status'] == 'borrowed'): ?>
                                                 <div style="display:flex; align-items:center; gap:6px; margin-bottom:2px;">
                                                     <span style="color:var(--danger);">&#9888;</span>
-                                                    <strong><?= sanitize($row['borrowed_by']) ?></strong>
-                                                </div>
-                                                <div style="font-size:0.8rem; color:#888; margin-left:18px;">
-                                                    Since: <?= date('M j, Y', strtotime($row['borrowed_at'])) ?>
+                                                    <strong>In Workflow</strong>
                                                 </div>
                                             <?php elseif($row['returned_at']): ?>
                                                 <div style="display:flex; align-items:center; gap:6px; margin-bottom:2px;">
                                                     <span style="color:var(--success);">&#10003;</span>
-                                                    <span>Returned to shelf</span>
-                                                </div>
-                                                <div style="font-size:0.8rem; color:#888; margin-left:18px;">
-                                                    On: <?= date('M j, Y', strtotime($row['returned_at'])) ?>
+                                                    <span>Returned on: <?= date('M j, Y', strtotime($row['returned_at'])) ?></span>
                                                 </div>
                                             <?php else: ?>
                                                 <span style="color:#aaa;">No recent history</span>
@@ -200,18 +193,17 @@ if(isset($_POST['add_file'])) {
                                             </a>
 
                                             <?php if($row['status'] == 'available'): ?>
-                                                <button onclick="openBorrowModal(<?= $row['id'] ?>, '<?= sanitize($row['file_name']) ?>')" 
-                                                        style="background:var(--primary); color:white; border:none; padding:6px 12px; border-radius:4px; font-size:0.85rem; cursor:pointer;">
-                                                    Borrow
-                                                </button>
+
                                             <?php elseif($row['status'] == 'borrowed'): ?>
+                                                <!-- RETURN BUTTON -->
                                                 <form method="POST" action="../actions/file_actions.php" style="display:inline;">
                                                     <input type="hidden" name="file_id" value="<?= $row['id'] ?>">
                                                     <input type="hidden" name="action" value="return_file">
-                                                    <button type="submit" style="background:#28a745; color:white; border:none; padding:6px 12px; border-radius:4px; font-size:0.85rem; cursor:pointer;">
+                                                    <button type="submit" class="btn" style="background:#28a745; color:white; border:none; padding:6px 12px; border-radius:4px; font-size:0.85rem; cursor:pointer;">
                                                         Return
                                                     </button>
                                                 </form>
+
                                             <?php endif; ?>
 
                                             <!-- Delete -->
@@ -225,8 +217,8 @@ if(isset($_POST['add_file'])) {
                                         </div>
                                     </td>
                                 </tr>
-                            <?php endwhile; ?>
-                        <?php else: ?>
+                            <?php endwhile; 
+                        else: ?>
                             <tr>
                                 <td colspan="4" style="padding:40px; text-align:center; color:#888;">
                                     No files found matching your criteria.
@@ -236,19 +228,19 @@ if(isset($_POST['add_file'])) {
                     </tbody>
                 </table>
             </div>
-
         </div>
     </div>
 </div>
 
 <!-- ADD FILE MODAL -->
 <div id="addModal" class="modal-overlay">
-    <div class="modal-content">
+    <div class="modal-content" style="max-width: 450px; border-top: 5px solid var(--primary);">
         <div class="modal-header">
             <h2>Add Physical File</h2>
             <button class="modal-close" onclick="document.getElementById('addModal').style.display='none'">&times;</button>
         </div>
         <form method="POST">
+            <input type="hidden" name="add_file" value="true">
             <div class="form-grid">
                 <div class="input-group">
                     <label>File Name</label>
@@ -290,67 +282,18 @@ if(isset($_POST['add_file'])) {
             </div>
             <div class="modal-actions">
                 <button type="button" class="btn-secondary" onclick="document.getElementById('addModal').style.display='none'">Cancel</button>
-                <button type="submit" name="add_file" class="btn">Save File</button>
-            </div>
-        </form>
-    </div>
-</div>
-
-<!-- BORROW MODAL (Improved UX) -->
-<div id="borrowModal" class="modal-overlay">
-    <div class="modal-content" style="max-width: 450px; border-top: 5px solid var(--primary);">
-        <div class="modal-header" style="border-bottom:none; padding-bottom:0;">
-            <h2 style="color:var(--text-dark);">Borrow File</h2>
-            <button class="modal-close" onclick="document.getElementById('borrowModal').style.display='none'">&times;</button>
-        </div>
-        
-        <form method="POST" action="../actions/file_actions.php" id="borrowForm">
-            <input type="hidden" name="file_id" id="borrow_file_id">
-            <input type="hidden" name="action" value="borrow_file">
-            
-            <div style="background:#f0f7ff; padding:15px; border-radius:8px; margin-bottom:20px; border:1px solid #d0e3ff; text-align:center;">
-                <div style="font-size:3rem; margin-bottom:5px;">&#128193;</div>
-                <strong id="borrow_file_name" style="font-size:1.1rem; color:var(--text-dark); display:block; margin-bottom:5px;">Filename</strong>
-                <span style="font-size:0.9rem; color:var(--text-light);">is being checked out</span>
-            </div>
-
-            <div class="input-group" style="margin-bottom: 20px;">
-                <label style="font-weight:600; margin-bottom:8px; display:block;">Borrowed By</label>
-                <div style="position:relative;">
-                    <input type="text" name="borrowed_by" required placeholder="Enter full name or ID..." 
-                           style="width:100%; padding:12px; border:2px solid #eee; border-radius:6px; font-size:1rem;"
-                           onfocus="this.style.borderColor='var(--primary)'" onblur="this.style.borderColor='#eee'">
-                    <span style="position:absolute; right:12px; top:12px; color:#ccc;">&#128100;</span>
-                </div>
-                <small style="color:#888; display:block; margin-top:5px;">Who is taking this file right now?</small>
-            </div>
-
-            <div class="modal-actions" style="padding-top:10px;">
-                <button type="button" class="btn-secondary" onclick="document.getElementById('borrowModal').style.display='none'" style="padding:10px 20px; border-radius:6px; border:none; cursor:pointer;">Cancel</button>
-                <button type="submit" class="btn" style="background:var(--primary); padding:10px 25px; border-radius:6px; border:none; cursor:pointer; font-weight:600;">Confirm Borrow</button>
+                <button type="submit" class="btn">Save File</button>
             </div>
         </form>
     </div>
 </div>
 
 <script>
-function openBorrowModal(id, name) {
-    document.getElementById('borrow_file_id').value = id;
-    document.getElementById('borrow_file_name').innerText = name;
-    document.getElementById('borrowModal').style.display='flex';
-    setTimeout(() => {
-        document.querySelector('input[name="borrowed_by"]').focus();
-    }, 100);
-}
-</script>
-
-<!-- Helper PHP for status colors -->
-<?php
 function getStatusBg($status) {
     switch($status) {
-        case 'borrowed': return '#ffebee'; // Red Tint
-        case 'archived': return '#f0f0f0'; // Grey Tint
-        case 'available': return '#e8f5e9'; // Green Tint
+        case 'borrowed': return '#ffebee'; 
+        case 'archived': return '#f0f0f0'; 
+        case 'available': return '#e8f5e9'; 
         default: return '#fff';
     }
 }
@@ -362,6 +305,6 @@ function getStatusText($status) {
         default: return '#333';
     }
 }
-?>
+</script>
 
 <?php require_once '../includes/footer.php'; ?>

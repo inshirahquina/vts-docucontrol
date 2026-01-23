@@ -66,7 +66,7 @@ if(isset($_POST['action'])) {
                                     <input type="hidden" name="status" value="rejected">
                                 </form>
                                 <?php elseif($row['status'] == 'active' && empty($row['return_date'])): ?>
-                                <form method="POST" action="../actions/borrow_actions.php">
+                                <form method="POST" action="../actions/file_actions.php">
                                     <input type="hidden" name="trans_id" value="<?= $row['id'] ?>">
                                     <input type="hidden" name="action" value="return_file">
                                     <button type="submit" class="btn btn-sm" style="background:var(--primary)">Return File</button>

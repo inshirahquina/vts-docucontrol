@@ -6,7 +6,19 @@ function isLoggedIn() {
 }
 
 function isAdmin() {
-    return isset($_SESSION['role']) && $_SESSION['role'] === 'admin';
+    if (!isset($_SESSION['user_id'])) {
+        return false;
+    }
+
+    if (isset($_SESSION['role']) && $_SESSION['role'] == 'admin') {
+        return true;
+    }
+    
+    if (isset($_SESSION['active_role']) && $_SESSION['active_role'] == 'admin') {
+        return true;
+    }
+
+    return false;
 }
 
 function redirect($url) {

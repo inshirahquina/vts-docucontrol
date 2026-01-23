@@ -37,7 +37,7 @@ if (!empty($_GET['dept'])) {
 <!-- WRAPPER START -->
 <div class="layout-wrapper">
     <!-- SIDEBAR INCLUDED ONLY HERE (Removed duplicate from top) -->
-    <?php require_once '../includes/sidebar_staff.php'; ?>
+    <?php require_once '../includes/sidebar.php'; ?>
 
     <div class="main-content">
 
@@ -103,7 +103,7 @@ if (!empty($_GET['dept'])) {
                                 <td><span class="badge <?= $f['status'] ?>"><?= $f['status'] ?></span></td>
                                 <td>
                                     <?php if($f['status'] == 'available'): ?>
-                                    <form method="POST" action="../actions/borrow_actions.php" style="display:inline;">
+                                    <form method="POST" action="../actions/file_actions.php" style="display:inline;">
                                         <input type="hidden" name="barcode_input" value="<?= $f['barcode'] ?>">
                                         <input type="hidden" name="action" value="request_borrow">
                                         <button class="btn-sm" type="submit">Request</button>

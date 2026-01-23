@@ -5,7 +5,7 @@ require_once '../includes/header.php';
 
 if(!isAdmin()) redirect('../index.php');
 
-// Handle Add Location
+// 1. Handle Add Location
 if(isset($_POST['add_location'])) {
     // Check if this specific room/rack/box combination already exists
     $check = $pdo->prepare("SELECT id FROM locations WHERE room = ? AND rack = ? AND box = ?");
@@ -14,7 +14,7 @@ if(isset($_POST['add_location'])) {
     if($check->rowCount() > 0) {
         $msg = "error_duplicate";
     } else {
-        $sql = "INSERT INTO locations (room, rack, box, location_name) VALUES (?,?,?,?)";
+        $sql = "INSERT INTO locations (room, rack, box, location_name) VALUES (?,?,?)";
         $stmt = $pdo->prepare($sql);
         try {
             // Create a readable name string like "Room 1 - A1 - Box 2"
@@ -28,9 +28,9 @@ if(isset($_POST['add_location'])) {
     }
 }
 
-// Handle Delete Location
+// 2. Handle Delete Location
 if(isset($_POST['delete_location'])) {
-    // Check if files are using this location (Optional Safety Check)
+    // Check if files are using this location (Safety Check)
     $checkFiles = $pdo->prepare("SELECT COUNT(*) FROM files WHERE location_id = ?");
     $checkFiles->execute([$_POST['location_id']]);
     $fileCount = $checkFiles->fetchColumn();
@@ -106,9 +106,9 @@ if(isset($_POST['delete_location'])) {
                         <?php
                         // Fetch locations and count files in one query for efficiency
                         $sql = "SELECT l.*, 
-                                (SELECT COUNT(*) FROM files f WHERE f.location_id = l.id) as file_count 
-                                FROM locations l 
-                                ORDER BY l.room, l.rack, l.box";
+                                        (SELECT COUNT(*) FROM files f WHERE f.location_id = l.id) as file_count 
+                                        FROM locations l 
+                                        ORDER BY l.room, l.rack, l.box";
                         $locations = $pdo->query($sql);
                         
                         if($locations->rowCount() > 0):

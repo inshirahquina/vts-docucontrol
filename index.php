@@ -2,9 +2,16 @@
 require_once 'config/db.php';
 require_once 'config/functions.php';
 
+// REDIRECT IF ALREADY LOGGED IN
 if (isLoggedIn()) {
-    if (isAdmin()) redirect('admin/dashboard.php');
-    else redirect('staff/dashboard.php');
+    $role = $_SESSION['role'] ?? '';
+    
+    if ($role == 'requestor') {
+        redirect('requestor/dashboard.php');
+    } else {
+        // Admin and Staff go to the same dashboard area
+        redirect('admin/dashboard.php');
+    }
 }
 
  $error = '';
@@ -17,17 +24,59 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     $user = $stmt->fetch();
 
     if ($user && password_verify($password, $user['password'])) {
+        // 1. Set Basic Session Variables
         $_SESSION['user_id'] = $user['id'];
         $_SESSION['username'] = $user['username'];
         $_SESSION['full_name'] = $user['full_name'];
-        $_SESSION['role'] = $user['role'];
-        
-        // Log login
-        $log = $pdo->prepare("INSERT INTO audit_logs (user_id, action) VALUES (?, 'User Logged In')");
-        $log->execute([$user['id']]);
+        $_SESSION['role'] = $user['role']; 
 
-        if ($user['role'] == 'admin') redirect('admin/dashboard.php');
-        else redirect('staff/dashboard.php');
+        $dbRole = $user['role'];
+        $dbActiveRole = $user['active_role'];
+
+        // 2. Handle Role Logic
+        if ($dbRole == 'requestor') {
+            // Requestors are fixed. They only have one role.
+            $_SESSION['active_role'] = 'requestor';
+
+        } elseif ($dbRole == 'admin') {
+            // Traditional Admins
+            if (empty($dbActiveRole)) {
+                $_SESSION['active_role'] = 'admin';
+                $update = $pdo->prepare("UPDATE users SET active_role = 'admin' WHERE id = ?");
+                $update->execute([$user['id']]);
+            } else {
+                $_SESSION['active_role'] = $dbActiveRole;
+            }
+
+        } elseif ($dbRole == 'staff') {
+            
+            if (empty($dbActiveRole)) {
+
+                $_SESSION['active_role'] = 'admin';
+                $update = $pdo->prepare("UPDATE users SET active_role = 'admin' WHERE id = ?");
+                $update->execute([$user['id']]);
+            } else {
+
+                $_SESSION['active_role'] = $dbActiveRole;
+            }
+        }
+
+        // 3. Log Login
+        $log = $pdo->prepare("INSERT INTO audit_logs (user_id, action, timestamp, details) VALUES (?, 'User Logged In', NOW(), ?)");
+        $details = json_encode([
+            'base_role' => $dbRole,
+            'active_role' => $_SESSION['active_role']
+        ]);
+        $log->execute([$user['id'], $details]);
+
+        // 4. Redirect
+        if ($dbRole == 'requestor') {
+            redirect('requestor/dashboard.php');
+        } else {
+            // Both 'admin' and 'staff' (if acting as admin) go here
+            redirect('admin/dashboard.php');
+        }
+
     } else {
         $error = "Invalid username or password.";
     }
@@ -39,7 +88,6 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Login - VTS DocuControl</title>
-    <!-- LINKING THE NEW CSS FILE -->
     <link rel="stylesheet" href="assets/css/login.css">
 </head>
 <body>
@@ -87,7 +135,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                     <label>Password</label>
                     <div class="input-wrapper">
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>
-                        <input type="password" name="password" placeholder="••••••••" required>
+                        <input type="password" name="password" placeholder="•••••••••" required>
                     </div>
                 </div>
 
