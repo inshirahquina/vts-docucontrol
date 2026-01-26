@@ -1,21 +1,29 @@
 <?php
+// 1. Initialize Logic & Configuration (Before any HTML)
 require_once '../config/db.php';
 require_once '../config/functions.php';
-require_once '../includes/header.php'; // Ensure this points to dynamic header
 
-if(!isAdmin()) redirect('../index.php');
-if (!isset($_SESSION['active_role'])) $_SESSION['active_role'] = 'admin';
+// Check Role and Redirect HERE (before headers are sent)
+if(!isAdmin()) {
+    redirect('../index.php');
+}
 
-// 1. Fetch Data
-$activeRole = $_SESSION['active_role'];
-$uid = $_SESSION['user_id'];
+// Set Active Role
+if (!isset($_SESSION['active_role'])) {
+    $_SESSION['active_role'] = 'admin';
+}
 
-// Get staff list for assignment dropdowns
-// We include current user in list so Nurul can assign to herself
-$staffList = $pdo->query("SELECT id, full_name FROM users WHERE role = 'staff' ORDER BY full_name ASC")->fetchAll();
+// 2. Fetch Data
+ $activeRole = $_SESSION['active_role'];
+ $uid = $_SESSION['user_id'];
+
+// FIX 1: Update the Staff Query.
+// We select both 'staff' AND 'admin' so that Admins (like Nurul) can be assigned tasks.
+ $sqlStaff = "SELECT id, full_name FROM users WHERE role = 'staff' OR role = 'admin' ORDER BY full_name ASC";
+ $staffList = $pdo->query($sqlStaff)->fetchAll();
 
 // Get all requests with details
-$sql = "SELECT r.*, f.file_name, f.barcode, f.department, f.status as file_status, 
+ $sql = "SELECT r.*, f.file_name, f.barcode, f.department, f.status as file_status, 
                u_req.full_name as requester_name, 
                u_op.full_name as operator_name
         FROM requests r 
@@ -31,9 +39,12 @@ $sql = "SELECT r.*, f.file_name, f.barcode, f.department, f.status as file_statu
             END, 
             r.borrow_date DESC";
         
-$stmt = $pdo->prepare($sql);
-$stmt->execute();
-$requests = $stmt;
+ $stmt = $pdo->prepare($sql);
+ $stmt->execute();
+ $requests = $stmt;
+
+// 3. Include HTML Header (AFTER all logic and redirects)
+require_once '../includes/header.php'; 
 ?>
 
 <div class="layout-wrapper">
@@ -77,7 +88,13 @@ $requests = $stmt;
                                 <span class="badge" style="background:#e3f2fd; color:#0d47a1; padding:4px 8px; border-radius:4px; font-weight:bold;">
                                     <?= $row['current_status'] ?>
                                 </span>
-                                <?php if($row['file_status'] == 'borrowed'): ?>
+                                
+                                <?php 
+                                // FIX 2: Improved Logic for "File Unavailable"
+                                // Only show warning if file is physically with user (Released) or permanently gone.
+                                // Do NOT show it during 'Requested' or 'Retrieval Assigned' phases.
+                                if(in_array($row['current_status'], ['Released', 'File Restored', 'Completed'])): 
+                                ?>
                                     <span style="font-size:0.75rem; color:#d63384; font-weight:bold; display:block; margin-top:4px;">(File Unavailable)</span>
                                 <?php endif; ?>
                             </td>
@@ -105,7 +122,6 @@ $requests = $stmt;
                                         <select name="assigned_staff_id" required style="padding:5px; margin-right:5px;">
                                             <option value="">Assign To...</option>
                                             <?php foreach($staffList as $s): ?>
-                                                <!-- PRE-SELECT SELF IF NURUL -->
                                                 <option value="<?= $s['id'] ?>" <?= $s['id'] == $uid ? 'selected' : '' ?>>
                                                     <?= sanitize($s['full_name']) ?>
                                                 </option>

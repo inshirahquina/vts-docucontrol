@@ -81,7 +81,6 @@
 </head>
 <body>
 <?php if(isLoggedIn()): ?>
-<div class="layout-wrapper">
     
     <!-- Note: Sidebar is included in the individual pages (e.g. my_files.php) -->
     

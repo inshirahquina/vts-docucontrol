@@ -1,25 +1,27 @@
 <?php
+// 1. Load Config & Functions (No HTML yet)
 require_once '../config/db.php';
 require_once '../config/functions.php';
-require_once '../includes/header.php';
 
-if(!isAdmin()) redirect('../index.php');
-
-// --- FILTER LOGIC ---
- $filter = $_GET['filter'] ?? 'all';
- $startDate = '';
-
-// Calculate Date Range based on filter
-if ($filter == 'monthly') {
-    $startDate = "AND DATE(a.timestamp) >= DATE_SUB(CURDATE(), INTERVAL 1 MONTH)";
-} elseif ($filter == 'quarterly') {
-    $startDate = "AND DATE(a.timestamp) >= DATE_SUB(CURDATE(), INTERVAL 3 MONTH)";
-} elseif ($filter == 'yearly') {
-    $startDate = "AND DATE(a.timestamp) >= DATE_SUB(CURDATE(), INTERVAL 1 YEAR)";
+// 2. Role Check (Redirect before any HTML output)
+if(!isAdmin()) {
+    redirect('../index.php');
 }
 
-// EXPORT LOGIC
+// 3. Export Logic (Must handle BEFORE header.php)
 if(isset($_GET['export']) && $_GET['export'] == 'audit') {
+    // Determine date range for export
+    $filter = $_GET['filter'] ?? 'all';
+    $startDate = '';
+    if ($filter == 'monthly') {
+        $startDate = "AND DATE(a.timestamp) >= DATE_SUB(CURDATE(), INTERVAL 1 MONTH)";
+    } elseif ($filter == 'quarterly') {
+        $startDate = "AND DATE(a.timestamp) >= DATE_SUB(CURDATE(), INTERVAL 3 MONTH)";
+    } elseif ($filter == 'yearly') {
+        $startDate = "AND DATE(a.timestamp) >= DATE_SUB(CURDATE(), INTERVAL 1 YEAR)";
+    }
+
+    // Send CSV Headers immediately
     header('Content-Type: text/csv');
     header('Content-Disposition: attachment; filename="audit_log_'.date('Y-m-d').'.csv"');
     $output = fopen('php://output', 'w');
@@ -46,8 +48,24 @@ if(isset($_GET['export']) && $_GET['export'] == 'audit') {
         fputcsv($output, [$row['req_id'], $row['timestamp'], $row['full_name'], $dets['role'] ?? '-', $row['status'], $row['file'], $row['dept']]);
     }
     fclose($output);
-    exit;
+    exit; // Stop script execution immediately after export
 }
+
+// 4. Regular Page Logic (If not exporting)
+ $filter = $_GET['filter'] ?? 'all';
+ $startDate = '';
+
+// Calculate Date Range based on filter
+if ($filter == 'monthly') {
+    $startDate = "AND DATE(a.timestamp) >= DATE_SUB(CURDATE(), INTERVAL 1 MONTH)";
+} elseif ($filter == 'quarterly') {
+    $startDate = "AND DATE(a.timestamp) >= DATE_SUB(CURDATE(), INTERVAL 3 MONTH)";
+} elseif ($filter == 'yearly') {
+    $startDate = "AND DATE(a.timestamp) >= DATE_SUB(CURDATE(), INTERVAL 1 YEAR)";
+}
+
+// 5. Include HTML Header (AFTER all checks and exports)
+require_once '../includes/header.php'; 
 ?>
 
 <!-- WRAPPER START -->

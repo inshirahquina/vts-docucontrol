@@ -1,7 +1,16 @@
 <?php
+session_start();
 require_once '../config/db.php';
 require_once '../config/functions.php';
-require_once '../includes/header.php';
+
+// --- LOGIC TO HANDLE ROLE SWITCHING ---
+// If the user switched to 'operations' role, redirect them to the staff dashboard.
+if (isset($_SESSION['active_role']) && $_SESSION['active_role'] === 'operations') {
+    header("Location: ../staff/dashboard.php");
+    exit();
+}
+
+require_once '../includes/header.php'; 
 
 // 1. TOTAL FILES
  $total_files = $pdo->query("SELECT COUNT(*) FROM files")->fetchColumn();

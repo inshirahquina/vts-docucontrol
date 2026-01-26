@@ -1,5 +1,8 @@
 <?php
-session_start();
+// Start session if not started
+if (session_status() === PHP_SESSION_NONE) {
+    session_start();
+}
 
 function isLoggedIn() {
     return isset($_SESSION['user_id']);
@@ -33,7 +36,3 @@ function sanitize($data) {
 function format_date($date) {
     return date('M d, Y', strtotime($date));
 }
-
-// Barcode scanner usually acts like a keyboard. 
-// No special JS needed, just an input field that focuses automatically.
-?>

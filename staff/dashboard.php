@@ -1,6 +1,12 @@
 <?php
+session_start();
 require_once '../config/db.php';
 require_once '../config/functions.php';
+
+if (isset($_SESSION['active_role']) && $_SESSION['active_role'] === 'admin') {
+    header("Location: ../admin/dashboard.php");
+    exit();
+}
 require_once '../includes/header.php'; 
 
 // Get User ID
