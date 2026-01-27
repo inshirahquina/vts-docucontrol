@@ -3,7 +3,7 @@
 require_once '../config/db.php';
 require_once '../config/functions.php';
 
-// Check Role and Redirect HERE (before headers are sent)
+// Check Role and Redirect
 if(!isAdmin()) {
     redirect('../index.php');
 }
@@ -17,8 +17,7 @@ if (!isset($_SESSION['active_role'])) {
  $activeRole = $_SESSION['active_role'];
  $uid = $_SESSION['user_id'];
 
-// FIX 1: Update the Staff Query.
-// We select both 'staff' AND 'admin' so that Admins (like Nurul) can be assigned tasks.
+// Fetch Staff and Admins for assignment dropdown
  $sqlStaff = "SELECT id, full_name FROM users WHERE role = 'staff' OR role = 'admin' ORDER BY full_name ASC";
  $staffList = $pdo->query($sqlStaff)->fetchAll();
 
@@ -34,8 +33,14 @@ if (!isset($_SESSION['active_role'])) {
             CASE r.current_status 
                 WHEN 'Requested' THEN 1 
                 WHEN 'Retrieval Assigned' THEN 2 
-                WHEN 'Return Requested' THEN 3 
-                ELSE 4 
+                WHEN 'File Retrieved' THEN 3
+                WHEN 'Return Requested' THEN 4 
+                WHEN 'Restoration Assigned' THEN 5
+                -- We use 99 for cancelled/completed so they go to bottom
+                WHEN 'Cancelled' THEN 99 
+                WHEN 'Completed' THEN 99
+                -- If DB is NULL/Empty (because enum didn't accept it), treat as 99
+                ELSE 100 
             END, 
             r.borrow_date DESC";
         
@@ -43,7 +48,7 @@ if (!isset($_SESSION['active_role'])) {
  $stmt->execute();
  $requests = $stmt;
 
-// 3. Include HTML Header (AFTER all logic and redirects)
+// 3. Include HTML Header
 require_once '../includes/header.php'; 
 ?>
 
@@ -85,17 +90,29 @@ require_once '../includes/header.php';
                                 </span>
                             </td>
                             <td style="padding:12px; vertical-align:top;">
-                                <span class="badge" style="background:#e3f2fd; color:#0d47a1; padding:4px 8px; border-radius:4px; font-weight:bold;">
-                                    <?= $row['current_status'] ?>
+                                <?php 
+                                    $displayStatus = $row['current_status'];
+                                    $badgeBg = '#e3f2fd';
+                                    $badgeColor = '#0d47a1';
+
+                                    // Handle Cancelled Status (Actual string or DB NULL/Empty due to Enum issues)
+                                    if ($displayStatus == 'Cancelled' || empty($displayStatus)) {
+                                        $displayStatus = 'Cancelled';
+                                        $badgeBg = '#fee2e2';
+                                        $badgeColor = '#b91c1c';
+                                    } elseif ($displayStatus == 'Completed') {
+                                        $badgeBg = '#d1fae5';
+                                        $badgeColor = '#065f46';
+                                    } elseif (in_array($displayStatus, ['Released', 'File Restored'])) {
+                                        $badgeBg = '#e0e7ff';
+                                        $badgeColor = '#3730a3';
+                                    }
+                                ?>
+                                <span class="badge" style="background:<?= $badgeBg ?>; color:<?= $badgeColor ?>; padding:4px 8px; border-radius:4px; font-weight:bold;">
+                                    <?= $displayStatus ?>
                                 </span>
                                 
-                                <?php 
-                                // FIX 2: Improved Logic for "File Unavailable"
-                                // Only show warning if file is physically with user (Released) or permanently gone.
-                                // Do NOT show it during 'Requested' or 'Retrieval Assigned' phases.
-                                if(in_array($row['current_status'], ['Released', 'File Restored', 'Completed'])): 
-                                ?>
-                                    <span style="font-size:0.75rem; color:#d63384; font-weight:bold; display:block; margin-top:4px;">(File Unavailable)</span>
+                                <?php if(in_array($displayStatus, ['Released', 'File Restored', 'Completed'])): ?>
                                 <?php endif; ?>
                             </td>
                             <td style="padding:12px; font-size:0.85rem; vertical-align:top;">
@@ -178,6 +195,17 @@ require_once '../includes/header.php';
                                         <input type="text" name="remarks" placeholder="Remarks (Optional)" style="padding:5px; margin-right:5px; width:120px;">
                                         <button type="submit" class="btn" style="padding:5px 10px; font-size:0.8rem;">Complete</button>
                                     </form>
+
+                                <?php elseif($row['current_status'] == 'Cancelled' || empty($row['current_status'])): ?>
+                                    <!-- Handle Cancelled Status -->
+                                    <span style="color:#dc2626; font-weight:bold; display:block;">Request Cancelled</span>
+                                    
+                                <?php elseif($row['current_status'] == 'Completed'): ?>
+                                    <span style="color:#059669; font-weight:bold;">Completed</span>
+                                    <?php if(!empty($row['remarks'])): ?>
+                                        <div style="font-size:0.75rem; color:#666; margin-top:4px;">Note: <?= sanitize($row['remarks']) ?></div>
+                                    <?php endif; ?>
+
                                 <?php else: ?>
                                     <span style="color:#999; font-style:italic;">Waiting...</span>
                                 <?php endif; ?>

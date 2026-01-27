@@ -1,142 +1,123 @@
 <?php
-// 1. Load Config & Functions (No HTML yet)
+// 1. Load Config & Functions
 require_once '../config/db.php';
 require_once '../config/functions.php';
 
-// 2. Role Check (Redirect before any HTML output)
+// 2. Role Check (Admins Only)
 if(!isAdmin()) {
     redirect('../index.php');
 }
 
-// 3. Export Logic (Must handle BEFORE header.php)
-if(isset($_GET['export']) && $_GET['export'] == 'audit') {
-    // Determine date range for export
-    $filter = $_GET['filter'] ?? 'all';
-    $startDate = '';
-    if ($filter == 'monthly') {
-        $startDate = "AND DATE(a.timestamp) >= DATE_SUB(CURDATE(), INTERVAL 1 MONTH)";
-    } elseif ($filter == 'quarterly') {
-        $startDate = "AND DATE(a.timestamp) >= DATE_SUB(CURDATE(), INTERVAL 3 MONTH)";
-    } elseif ($filter == 'yearly') {
-        $startDate = "AND DATE(a.timestamp) >= DATE_SUB(CURDATE(), INTERVAL 1 YEAR)";
-    }
+// 3. Determine Date Filter
+$filter = $_GET['filter'] ?? 'all';
+$startDateSQL = '';
+if ($filter == 'monthly') {
+    $startDateSQL = "AND DATE(a.timestamp) >= DATE_SUB(CURDATE(), INTERVAL 1 MONTH)";
+} elseif ($filter == 'quarterly') {
+    $startDateSQL = "AND DATE(a.timestamp) >= DATE_SUB(CURDATE(), INTERVAL 3 MONTH)";
+} elseif ($filter == 'yearly') {
+    $startDateSQL = "AND DATE(a.timestamp) >= DATE_SUB(CURDATE(), INTERVAL 1 YEAR)";
+}
 
-    // Send CSV Headers immediately
+// 4. Export CSV Logic (Before HTML Output)
+if(isset($_GET['export']) && $_GET['export'] == 'audit') {
     header('Content-Type: text/csv');
     header('Content-Disposition: attachment; filename="audit_log_'.date('Y-m-d').'.csv"');
+
     $output = fopen('php://output', 'w');
-    
-    // Headers
-    fputcsv($output, ['Request ID', 'Timestamp', 'User', 'Role', 'Status', 'File Name', 'Department']);
-    
-    // Query
-    $sql = "SELECT a.*, u.full_name, u.role 
-             FROM audit_logs a 
-             JOIN users u ON a.user_id = u.id 
-             WHERE 1=1 $startDate 
-             ORDER BY a.timestamp DESC";
+    fputcsv($output, ['Request ID','Timestamp','User','Role','Status','File Name','Department']);
+
+    $sql = "SELECT a.request_id, a.timestamp, u.full_name, a.role, a.status, a.file_name, a.department
+            FROM audit_logs a
+            JOIN users u ON a.user_id = u.id
+            WHERE 1=1 $startDateSQL
+            ORDER BY a.timestamp DESC";
     $stmt = $pdo->query($sql);
-    
+
     while($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
-        // Decode details
-        $dets = json_decode($row['details'], true);
-        $row['req_id'] = $dets['request_id'] ?? '-';
-        $row['status'] = $dets['status'] ?? '-';
-        $row['file'] = $dets['file_name'] ?? '-';
-        $row['dept'] = $dets['department'] ?? '-';
-        
-        fputcsv($output, [$row['req_id'], $row['timestamp'], $row['full_name'], $dets['role'] ?? '-', $row['status'], $row['file'], $row['dept']]);
+        fputcsv($output, [
+            $row['request_id'],
+            $row['timestamp'],
+            $row['full_name'],
+            $row['role'],
+            $row['status'],
+            $row['file_name'],
+            $row['department']
+        ]);
     }
+
     fclose($output);
-    exit; // Stop script execution immediately after export
+    exit;
 }
 
-// 4. Regular Page Logic (If not exporting)
- $filter = $_GET['filter'] ?? 'all';
- $startDate = '';
-
-// Calculate Date Range based on filter
-if ($filter == 'monthly') {
-    $startDate = "AND DATE(a.timestamp) >= DATE_SUB(CURDATE(), INTERVAL 1 MONTH)";
-} elseif ($filter == 'quarterly') {
-    $startDate = "AND DATE(a.timestamp) >= DATE_SUB(CURDATE(), INTERVAL 3 MONTH)";
-} elseif ($filter == 'yearly') {
-    $startDate = "AND DATE(a.timestamp) >= DATE_SUB(CURDATE(), INTERVAL 1 YEAR)";
-}
-
-// 5. Include HTML Header (AFTER all checks and exports)
-require_once '../includes/header.php'; 
+// 5. Include Header
+require_once '../includes/header.php';
 ?>
 
-<!-- WRAPPER START -->
 <div class="layout-wrapper">
     <?php require_once '../includes/sidebar.php'; ?>
 
     <div class="main-content">
-
         <div class="content-area">
             <div class="card">
-                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 15px;">
-                    <h3>Audit Trail</h3>
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:15px;">
+                    <h3>Audit Logs</h3>
                     <div style="display:flex; gap:10px; align-items:center;">
-                        <!-- Search Input -->
+                        <!-- Live Search Input -->
                         <input type="text" id="searchInput" placeholder="Search File, Department, or User..." style="padding:8px; border:1px solid #ddd; border-radius:4px;">
-                        
+
                         <!-- Filters -->
                         <select id="filterSelect" onchange="applyFilters()" style="padding:8px; border:1px solid #ddd; border-radius:4px;">
-                            <option value="all">All Time</option>
-                            <option value="monthly" <?= $filter == 'monthly' ? 'selected' : '' ?>>Last Month</option>
-                            <option value="quarterly" <?= $filter == 'quarterly' ? 'selected' : '' ?>>Last 3 Months</option>
-                            <option value="yearly" <?= $filter == 'yearly' ? 'selected' : '' ?>>Last Year</option>
+                            <option value="all" <?= $filter=='all'?'selected':'' ?>>All Time</option>
+                            <option value="monthly" <?= $filter=='monthly'?'selected':'' ?>>Last Month</option>
+                            <option value="quarterly" <?= $filter=='quarterly'?'selected':'' ?>>Last 3 Months</option>
+                            <option value="yearly" <?= $filter=='yearly'?'selected':'' ?>>Last Year</option>
                         </select>
 
                         <a href="?export=audit&filter=<?= $filter ?>" class="btn">Export CSV</a>
                     </div>
                 </div>
-                
-                <table>
+
+                <table id="auditTable">
                     <thead>
                         <tr>
                             <th>Timestamp</th>
                             <th>User</th>
+                            <th>Role</th>
                             <th>Status</th>
-                            <th>File Details</th>
+                            <th>File Name</th>
+                            <th>Department</th>
                         </tr>
                     </thead>
-                    <tbody id="auditTableBody">
-                        <?php 
-                        $sql = "SELECT a.*, u.full_name, u.role as user_role 
-                                     FROM audit_logs a 
-                                     JOIN users u ON a.user_id = u.id 
-                                     WHERE 1=1 $startDate 
-                                     ORDER BY a.timestamp DESC LIMIT 50";
-                        $logs = $pdo->query($sql);
-                        if($logs->rowCount() > 0):
-                            while($row = $logs->fetch()):
-                                // Decode details
-                                $details = json_decode($row['details'], true);
+                    <tbody>
+                        <?php
+                        // Fetch last 50 logs
+                        $sql = "SELECT a.request_id, a.timestamp, u.full_name, a.role, a.status, a.file_name, a.department
+                                FROM audit_logs a
+                                JOIN users u ON a.user_id = u.id
+                                WHERE 1=1 $startDateSQL
+                                ORDER BY a.timestamp DESC
+                                LIMIT 50";
+                        $stmt = $pdo->query($sql);
+
+                        if($stmt->rowCount() > 0):
+                            while($row = $stmt->fetch(PDO::FETCH_ASSOC)):
                         ?>
                         <tr>
-                            <td style="font-size:0.85rem; color:var(--text-light);"><?= $row['timestamp'] ?></td>
-                            <td>
-                                <strong><?= sanitize($row['full_name']) ?></strong><br>
-                                <span style="font-size:0.75rem; color:#888; text-transform:uppercase;"><?= ucfirst($row['user_role']) ?></span>
-                            </td>
-                            <td>
-                                <span style="font-weight:bold; color:var(--accent);"><?= $details['status'] ?? 'System Action' ?></span>
-                            </td>
-                            <td style="font-size:0.85rem;">
-                                <?php if(isset($details['file_name'])): ?>
-                                    <strong><?= sanitize($details['file_name']) ?></strong><br>
-                                    <span style="color:#666;"><?= sanitize($details['department']) ?></span>
-                                <?php else: ?>
-                                    <span style="color:#999;">-</span>
-                                <?php endif; ?>
-                            </td>
+                            <td><?= $row['timestamp'] ?></td>
+                            <td><?= sanitize($row['full_name']) ?></td>
+                            <td><?= ucfirst($row['role']) ?></td>
+                            <td><?= sanitize($row['status']) ?></td>
+                            <td><?= sanitize($row['file_name']) ?></td>
+                            <td><?= sanitize($row['department']) ?></td>
                         </tr>
-                        <?php endwhile; 
-                        else: ?>
-                        <tr><td colspan="4" style="text-align:center; padding: 20px;">No recent activity found.</td></tr>
+                        <?php
+                            endwhile;
+                        else:
+                        ?>
+                        <tr>
+                            <td colspan="6" style="text-align:center; padding:20px;">No recent activity found.</td>
+                        </tr>
                         <?php endif; ?>
                     </tbody>
                 </table>
@@ -146,12 +127,20 @@ require_once '../includes/header.php';
 </div>
 
 <script>
+// Filter and Search
 function applyFilters() {
     const filter = document.getElementById('filterSelect').value;
-    const search = document.getElementById('searchInput').value;
-    // Simple reload for now
-    window.location.href = `reports.php?filter=${filter}`;
+    window.location.href = `audit_logs.php?filter=${filter}`;
 }
+
+// Live Search
+document.getElementById('searchInput').addEventListener('keyup', function() {
+    const searchTerm = this.value.toLowerCase();
+    const rows = document.querySelectorAll('#auditTable tbody tr');
+    rows.forEach(row => {
+        row.style.display = Array.from(row.cells).some(td => td.textContent.toLowerCase().includes(searchTerm)) ? '' : 'none';
+    });
+});
 </script>
 
 <?php require_once '../includes/footer.php'; ?>

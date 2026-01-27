@@ -5,8 +5,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>VTS DocuControl</title>
     <link rel="stylesheet" href="../assets/css/style.css">
+    
     <style>
-        /* Role Switcher Dropdown Styles */
+        /* Role Switcher & Notifications */
         .role-switcher {
             position: relative;
             display: inline-block;
@@ -77,12 +78,70 @@
             align-items: center;
             gap: 25px;
         }
+
+        /* Toast Notification Styles */
+        #toast-container {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            z-index: 1000;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .toast-msg {
+            background: #333;
+            color: white;
+            padding: 12px 20px;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+            min-width: 250px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            animation: slideIn 0.3s ease-out forwards, fadeOut 0.5s ease-in 4.5s forwards;
+            font-size: 0.9rem;
+            border-left: 5px solid var(--accent);
+        }
+
+        .toast-content {
+            display: flex;
+            flex-direction: column;
+        }
+        .toast-title {
+            font-weight: bold;
+            margin-bottom: 2px;
+        }
+        .toast-body {
+            font-size: 0.85rem;
+            opacity: 0.9;
+        }
+
+        @keyframes slideIn {
+            from { transform: translateX(100%); opacity: 0; }
+            to { transform: translateX(0); opacity: 1; }
+        }
+        @keyframes fadeOut {
+            from { opacity: 1; }
+            to { opacity: 0; }
+        }
     </style>
 </head>
 <body>
-<?php if(isLoggedIn()): ?>
+<?php 
+// FIX 1: Ensure Database Connection is available
+require_once '../config/db.php'; 
+
+// FIX 2: Wrap session_start to prevent "Headers already sent" error
+// This check ensures that if header.php is included by other files (or called twice), it won't crash.
+if (session_status() === PHP_SESSION_NONE) {
+    session_start();
+}
+
+if(isLoggedIn()): ?>
     
-    <!-- Note: Sidebar is included in the individual pages (e.g. my_files.php) -->
+    <!-- Note: Sidebar is included in individual pages -->
     
     <div class="main-content">
         <header>
@@ -113,15 +172,47 @@
                 <!-- NOTIFICATION BELL -->
                 <?php 
                 $notif_count = 0;
-                
-                // FIX: Check if $uid is already set in the main file to prevent crashes
-                if(!isset($uid)) {
-                    $uid = $_SESSION['user_id'];
+                $uid = $_SESSION['user_id'];
+                $activeRole = $_SESSION['active_role'];
+
+                // Helper function for "Time Ago" (Fixed for PHP 8.2+)
+                function time_ago($datetime, $full = false) {
+                    $now = new DateTime();
+                    $ago = new DateTime($datetime);
+                    $diff = $now->diff($ago);
+
+                    // FIX: Calculate weeks manually to avoid PHP 8.2 Deprecation Error
+                    $weeks = floor($diff->d / 7);
+                    $diff->d = $diff->d % 7; 
+
+                    $string = array(
+                        'y' => 'year', 'm' => 'month',
+                        'd' => 'day', 'h' => 'hour', 'i' => 'minute', 's' => 'second',
+                    );
+                    
+                    if ($weeks > 0) {
+                        $string['w'] = 'week';
+                        $diff->d = $weeks; // Update object for display if needed
+                    } else {
+                        unset($string['w']);
+                    }
+
+                    foreach ($string as $k => &$v) {
+                        if ($diff->$k) {
+                            $v = $diff->$k . ' ' . $v . ($diff->$k > 1 ? 's' : '');
+                        } else {
+                            unset($string[$k]);
+                        }
+                    }
+
+                    if (!$full) $string = array_slice($string, 0, 1);
+                    return $string ? implode(', ', $string) . ' ago' : 'just now';
                 }
                 
                 // Only run query if we have a valid ID
                 if($uid):
                     try {
+                        // Fetch count of unread notifications for the current active role
                         $stmt = $pdo->prepare("SELECT COUNT(*) FROM notifications WHERE user_id = ? AND is_read = 0");
                         $stmt->execute([$uid]);
                         $notif_count = $stmt->fetchColumn();
@@ -147,13 +238,14 @@
                             <?php
                             if($uid):
                                 try {
+                                    // Fetch recent notifications
                                     $stmt = $pdo->prepare("SELECT * FROM notifications WHERE user_id = ? ORDER BY created_at DESC LIMIT 5");
                                     $stmt->execute([$uid]);
                                     if($stmt->rowCount() > 0):
                                         while($row = $stmt->fetch()): ?>
                                         <a href="<?= $row['link'] ?>" class="notif-item <?= $row['is_read'] ? '' : 'unread' ?>">
                                             <div class="notif-text"><?= sanitize($row['message']) ?></div>
-                                            <div class="notif-time" style="font-size:0.75rem; color:#94a3b8;"><?= $row['created_at'] ?></div>
+                                            <div class="notif-time" style="font-size:0.75rem; color:#94a3b8;"><?= time_ago($row['created_at']) ?></div>
                                         </a>
                                     <?php endwhile; 
                                     else: ?>
@@ -171,15 +263,70 @@
                 <div class="user-profile">
                     <div class="user-info">
                         <strong><?= sanitize($_SESSION['full_name']) ?></strong>
-                        <span><?= ucfirst($_SESSION['active_role']) ?></span>
+                        <span><?= ucfirst($activeRole) ?></span>
                     </div>
                     <a href="../logout.php" class="logout-btn">Logout</a>
                 </div>
             </div>
         </header>
-        <!-- HEADER ENDS. main-content DIV IS OPEN. -->
+
+        <!-- TOAST CONTAINER (Bottom Right Popups) -->
+        <div id="toast-container"></div>
+
+        <script>
+            // Function to show popup notification
+            function showToast(title, message, link) {
+                const container = document.getElementById('toast-container');
+                const toast = document.createElement('div');
+                toast.className = 'toast-msg';
+                
+                toast.innerHTML = `
+                    <div class="toast-content">
+                        <div class="toast-title">${title}</div>
+                        <div class="toast-body">${message}</div>
+                    </div>
+                    <a href="${link}" style="color: white; font-size: 1.2rem; text-decoration:none;">&rarr;</a>
+                `;
+
+                container.appendChild(toast);
+
+                // Remove from DOM after animation finishes (5 seconds total)
+                setTimeout(function() {
+                    toast.remove();
+                }, 5000);
+            }
+
+            let lastNotificationId = 0;
+
+            setInterval(function() {
+                // Send last ID we have seen to the server
+                // FIX: Removed cache headers to ensure clean fetch
+                // Also added ?last_id= at the start to ensure consistency
+                fetch('../actions/check_new_notif.php?last_id=' + lastNotificationId) 
+                    .then(function(response) { return response.json(); })
+                    .then(function(data) {
+                        // DEBUG: Check console (F12) to see what's server is returning
+                        console.log('Debug Data:', data); 
+
+                        if (data.has_new) {
+                            // Update badge count
+                            const badge = document.querySelector('.badge-count');
+                            if (badge) {
+                                const currentCount = parseInt(badge.innerText);
+                                badge.innerText = currentCount + 1;
+                                badge.style.display = 'inline-block';
+                            }
+                            // Show popup
+                            showToast("New Notification", data.message, data.link);
+                            
+                            // Update local variable so we don't show it again
+                            lastNotificationId = data.id;
+                        }
+                    })
+                    .catch(function(err) { console.log(err); });
+            }, 5000); 
+        </script>
 
 <?php else: ?>
-    <!-- Redirect if not logged in -->
     <script>window.location.href='../index.php';</script>
 <?php endif; ?>

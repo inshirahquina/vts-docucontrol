@@ -36,32 +36,30 @@ if (isset($_SESSION['role']) && $_SESSION['role'] !== 'requestor') {
 
 // --- FILTERS SETUP ---
  $where = [];
- $params = [];
+ $params = []; // This will now store key-value pairs like ['search' => '%term%']
 
 // Default to available files ONLY if no availability filter is set
 if (!isset($_GET['status']) || empty($_GET['status'])) {
     $where[] = "f.status = 'available'";
 }
 
-// Search Filter
+// Search Filter (Changed to named parameter :search_term)
 if (!empty($_GET['search'])) {
     $searchTerm = "%" . $_GET['search'] . "%";
-    $where[] = "(f.file_name LIKE ? OR f.barcode LIKE ? OR f.department LIKE ?)";
-    $params[] = $searchTerm;
-    $params[] = $searchTerm;
-    $params[] = $searchTerm;
+    $where[] = "(f.file_name LIKE :search_term OR f.barcode LIKE :search_term OR f.department LIKE :search_term)";
+    $params[':search_term'] = $searchTerm;
 }
 
-// Department Filter (Dynamic)
+// Department Filter (Changed to named parameter :dept_filter)
 if (!empty($_GET['department']) && $_GET['department'] !== 'all') {
-    $where[] = "f.department = ?";
-    $params[] = $_GET['department'];
+    $where[] = "f.department = :dept_filter";
+    $params[':dept_filter'] = $_GET['department'];
 }
 
-// Availability/Status Filter (Dynamic)
+// Availability/Status Filter (Changed to named parameter :status_filter)
 if (!empty($_GET['status']) && $_GET['status'] !== 'all') {
-    $where[] = "f.status = ?";
-    $params[] = $_GET['status'];
+    $where[] = "f.status = :status_filter";
+    $params[':status_filter'] = $_GET['status'];
 }
 
 // --- BUILD QUERIES ---
@@ -73,7 +71,11 @@ if (!empty($where)) {
 }
 
  $stmtCount = $pdo->prepare($sqlCount);
- $stmtCount->execute($params); 
+// Bind parameters for count query
+foreach ($params as $key => $value) {
+    $stmtCount->bindValue($key, $value);
+}
+ $stmtCount->execute();
  $total_rows = $stmtCount->fetchColumn();
  $total_pages = ceil($total_rows / $limit);
 
@@ -90,10 +92,14 @@ if (!empty($where)) {
 
  $stmt = $pdo->prepare($sql);
 
-// Fix for mixed parameter types
+// --- BINDING PARAMETERS (100% Named) ---
+
+// 1. Bind Filter/Search parameters (e.g., :search_term)
 foreach ($params as $key => $value) {
-    $stmt->bindValue($key + 1, $value); 
+    $stmt->bindValue($key, $value);
 }
+
+// 2. Bind Pagination parameters
  $stmt->bindValue(':limit', $limit, PDO::PARAM_INT);
  $stmt->bindValue(':offset', $offset, PDO::PARAM_INT);
 
@@ -109,7 +115,7 @@ foreach ($params as $key => $value) {
         <div class="sidebar-menu">
             <a href="dashboard.php" class="<?= ($current_page == 'dashboard.php') ? 'active' : ''; ?>">Dashboard</a>
             <a href="browse.php" class="<?= ($current_page == 'browse.php') ? 'active' : ''; ?>">Browse Files</a>
-            <a href="my_files.php" class="<?= ($current_page == 'my_files.php') ? 'active' : ''; ?>">My Files</a>
+            <a href="my_files.php" class="<?= ($current_page == 'my_files.php') ? 'active' : ''; ?>">My History</a>
         </div>
     </div>
 

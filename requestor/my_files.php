@@ -17,8 +17,8 @@ if (isset($_SESSION['role']) && $_SESSION['role'] !== 'requestor') {
     redirect('../index.php');
 }
 
-$current_page = basename($_SERVER['PHP_SELF']);
-$uid = $_SESSION['user_id'];
+ $current_page = basename($_SERVER['PHP_SELF']);
+ $uid = $_SESSION['user_id'];
 
 // --- Debug: check session & user_id ---
 if (!$uid) {
@@ -28,7 +28,7 @@ if (!$uid) {
 }
 
 // 3. FETCH DATA
-$sql = "
+ $sql = "
     SELECT r.*, f.file_name, f.barcode, f.department
     FROM requests r
     JOIN files f ON r.file_id = f.id
@@ -36,12 +36,13 @@ $sql = "
     ORDER BY r.borrow_date DESC
 ";
 
-$stmt = $pdo->prepare($sql);
-$stmt->execute([$uid]);
-$rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+ $stmt = $pdo->prepare($sql);
+ $stmt->execute([$uid]);
+ $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
 // 4. STATUS MAPPING
-$statusMap = [
+// FIX: Added 'Cancelled' to the array
+ $statusMap = [
     'Requested' => ['Pending Approval','#fef3c7','#d97706','⏳'],
     'Retrieval Assigned' => ['Processing','#e0f2fe','#0369a1','🛠️'],
     'File Retrieved' => ['Processing','#e0f2fe','#0369a1','🛠️'],
@@ -49,7 +50,8 @@ $statusMap = [
     'Return Requested' => ['Returning','#f3e8ff','#7e22ce','↩️'],
     'Restoration Assigned' => ['Returning','#f3e8ff','#7e22ce','↩️'],
     'File Restored' => ['Returning','#f3e8ff','#7e22ce','↩️'],
-    'Completed' => ['Completed','#d1fae5','#065f46','✅']
+    'Completed' => ['Completed','#d1fae5','#065f46','✅'],
+    'Cancelled' => ['Cancelled', '#fee2e2', '#b91c1c', '🚫'] // <--- ADDED THIS LINE
 ];
 
 // 5. HEADER (includes CSS/JS)
@@ -87,7 +89,13 @@ require_once '../includes/header.php';
                             <?php foreach ($rows as $row): ?>
                                 <?php
                                 $actionBtn = false;
+                                $actionType = null; // 'return' or 'cancel'
                                 $statusKey = $row['current_status'];
+
+                                // SAFETY CHECK: If the DB value is NULL or empty (due to previous Enum issue), force it to 'Cancelled'
+                                if (empty($statusKey)) {
+                                    $statusKey = 'Cancelled';
+                                }
 
                                 // fallback if status unknown
                                 if (!isset($statusMap[$statusKey])) {
@@ -98,9 +106,13 @@ require_once '../includes/header.php';
                                 } else {
                                     [$statusLabel, $bg, $color, $icon] = $statusMap[$statusKey];
 
-                                    // Only Released status allows return action
+                                    // Logic for Action Buttons
                                     if ($statusKey === 'Released') {
                                         $actionBtn = true;
+                                        $actionType = 'return';
+                                    } elseif ($statusKey === 'Requested') {
+                                        $actionBtn = true;
+                                        $actionType = 'cancel';
                                     }
                                 }
                                 ?>
@@ -122,12 +134,20 @@ require_once '../includes/header.php';
                                     </td>
                                     <td style="padding:20px 25px; text-align:right;">
                                         <?php if ($actionBtn): ?>
-                                            <form method="POST" action="../actions/request_actions.php" onsubmit="return confirm('Return this file?');">
-                                                <input type="hidden" name="action" value="request_return">
+                                            <form method="POST" action="../actions/request_actions.php" onsubmit="return confirm('Are you sure?');">
                                                 <input type="hidden" name="request_id" value="<?= $row['id'] ?>">
-                                                <button style="background:#ef4444; color:#fff; border:none; padding:8px 14px; border-radius:6px;">
-                                                    Return
-                                                </button>
+                                                
+                                                <?php if ($actionType === 'return'): ?>
+                                                    <input type="hidden" name="action" value="request_return">
+                                                    <button style="background:#ef4444; color:#fff; border:none; padding:8px 14px; border-radius:6px; cursor:pointer;">
+                                                        Return
+                                                    </button>
+                                                <?php elseif ($actionType === 'cancel'): ?>
+                                                    <input type="hidden" name="action" value="cancel_request">
+                                                    <button style="background:#fff; color:#6b7280; border:1px solid #d1d5db; padding:8px 14px; border-radius:6px; cursor:pointer; font-size:0.9rem;">
+                                                        Cancel Request
+                                                    </button>
+                                                <?php endif; ?>
                                             </form>
                                         <?php else: ?>
                                             <em style="color:#9ca3af;">No Action</em>
