@@ -24,7 +24,7 @@ $role = $_SESSION['active_role'] ?? $_SESSION['role'] ?? 'requestor';
         <a href="../index.php" class="sidebar-brand">VTS Operations</a>
         <div class="sidebar-menu">
             <a href="../staff/dashboard.php" class="<?= ($current_page === 'dashboard.php') ? 'active' : ''; ?>">Dashboard</a>
-            <a href="../staff/tasks.php" class="<?= ($current_page === 'tasks.php') ? 'active' : ''; ?>">My Tasks</a>
+            <!-- <a href="../staff/tasks.php" class="<?= ($current_page === 'tasks.php') ? 'active' : ''; ?>">My Tasks</a> -->
             <a href="../admin/reports.php" class="<?= ($current_page === 'reports.php') ? 'active' : ''; ?>">History</a>
         </div>
 

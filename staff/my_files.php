@@ -12,26 +12,39 @@ if (!isset($_SESSION['active_role'])) {
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && $_POST['action'] == 'create_request') {
     $fileId = $_POST['file_id'];
     $userId = $_SESSION['user_id'];
-    
-    // Insert into requests table
+
     $sql = "INSERT INTO requests (file_id, user_id, borrow_date, due_date, current_status) 
             VALUES (?, ?, CURDATE(), DATE_ADD(CURDATE(), INTERVAL 7 DAY), 'Requested')";
     $stmt = $pdo->prepare($sql);
-    
-    if($stmt->execute([$fileId, $userId])) {
-        // Mark file as borrowed/reserved immediately so no one else requests it
-        $pdo->prepare("UPDATE files SET status = 'borrowed' WHERE id = ?")->execute([$fileId]);
-        
-        // Audit Log
-        $sqlAudit = "INSERT INTO audit_logs (user_id, action, timestamp, details) VALUES (?, ?, NOW(), ?)";
-        $details = json_encode(['request_id' => $pdo->lastInsertId(), 'status' => 'Requested', 'role' => 'requestor']);
-        $pdo->prepare($sqlAudit)->execute([$userId, "Status Change: Requested", $details]);
-        
+
+    if ($stmt->execute([$fileId, $userId])) {
+
+        $requestId = $pdo->lastInsertId();
+
+        $pdo->prepare("UPDATE files SET status = 'borrowed' WHERE id = ?")
+            ->execute([$fileId]);
+
+        $fileStmt = $pdo->prepare("SELECT file_name, department FROM files WHERE id = ?");
+        $fileStmt->execute([$fileId]);
+        $file = $fileStmt->fetch(PDO::FETCH_ASSOC);
+
+        logAudit($pdo, [
+            'user_id'     => $userId,
+            'request_id'  => $requestId,
+            'status'      => 'Requested',
+            'file_name'   => $file['file_name'],
+            'department'  => $file['department'],
+            'role'        => $_SESSION['active_role'],
+            'action'      => 'Create Request',
+            'details'     => 'Request submitted by requestor'
+        ]);
+
         header("Location: my_files.php?msg=requested");
+        exit;
     } else {
         header("Location: my_files.php?msg=error");
+        exit;
     }
-    exit;
 }
 ?>
 
@@ -73,11 +86,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $_POST['action'] == 'create_request
                     <tbody>
                         <?php
                         $uid = $_SESSION['user_id'];
-                        $sql = "SELECT r.*, f.file_name, f.barcode 
-                                FROM requests r 
-                                JOIN files f ON r.file_id = f.id 
-                                WHERE r.user_id = ? 
-                                ORDER BY r.borrow_date DESC";
+                        $sql = "
+                        SELECT r.*, f.file_name, f.barcode, f.department,
+                            fh.action AS last_action,
+                            fh.performed_by AS last_by,
+                            fh.created_at AS last_at
+                        FROM requests r
+                        JOIN files f ON r.file_id = f.id
+                        LEFT JOIN file_history fh 
+                            ON fh.request_id = r.id
+                        WHERE r.user_id = ?
+                        ORDER BY r.borrow_date DESC, fh.created_at DESC
+                        ";
                         $stmt = $pdo->prepare($sql);
                         $stmt->execute([$uid]);
                         

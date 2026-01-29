@@ -270,10 +270,9 @@ if(isLoggedIn()): ?>
             </div>
         </header>
 
-        <!-- TOAST CONTAINER (Bottom Right Popups) -->
         <div id="toast-container"></div>
 
-        <script>
+        <!-- <script>
             // Function to show popup notification
             function showToast(title, message, link) {
                 const container = document.getElementById('toast-container');
@@ -325,7 +324,7 @@ if(isLoggedIn()): ?>
                     })
                     .catch(function(err) { console.log(err); });
             }, 5000); 
-        </script>
+        </script> -->
 
 <?php else: ?>
     <script>window.location.href='../index.php';</script>

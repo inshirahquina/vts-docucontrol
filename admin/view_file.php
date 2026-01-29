@@ -5,15 +5,19 @@ require_once '../includes/header.php';
 
 if(!isAdmin()) redirect('../index.php');
 
- $file_id = $_GET['id'] ?? redirect('files.php');
+$file_id = $_GET['id'] ?? redirect('files.php');
 
-// 1. Get File Details
- $stmt = $pdo->prepare("SELECT f.*, l.room, l.rack, l.box 
-                        FROM files f 
-                        LEFT JOIN locations l ON f.location_id = l.id 
-                        WHERE f.id = ?");
- $stmt->execute([$file_id]);
- $file = $stmt->fetch();
+$hist = $pdo->prepare("
+    SELECT fh.*, r.current_status, u.full_name AS user_name
+    FROM file_history fh
+    LEFT JOIN requests r ON fh.request_id = r.id
+    LEFT JOIN users u ON r.user_id = u.id
+    WHERE fh.file_id = ?
+    ORDER BY fh.created_at DESC
+");
+$hist->execute([$file_id]);
+$history = $hist->fetchAll();
+
 
 if(!$file) redirect('files.php');
 
@@ -86,8 +90,9 @@ if(!$file) redirect('files.php');
                             <?php foreach($history as $row): ?>
                             <tr>
                                 <td><?= date('M j, Y g:i A', strtotime($row['created_at'])) ?></td>
-                                <td><?= sanitize($row['action']) ?></td>
-                                <td><?= sanitize($row['performed_by']) ?></td>
+                                <td><?= sanitize($row['action']) ?> (<?= sanitize($row['current_status']) ?>)</td>
+                                <td><?= sanitize($row['performed_by']) ?> <?= $row['user_name'] ? '('.sanitize($row['user_name']).')' : '' ?></td>
+
                             </tr>
                             <?php endforeach; ?>
                         </tbody>

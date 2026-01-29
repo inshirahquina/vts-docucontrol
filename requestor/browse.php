@@ -186,9 +186,9 @@ foreach ($params as $key => $value) {
                                     <div style="font-weight:700; font-size:1rem; color:var(--text-dark); margin-bottom:4px;">
                                         <?= htmlspecialchars($row['file_name']) ?>
                                     </div>
-                                    <div style="font-family:monospace; font-size:0.85rem; color:var(--text-light); background:#f4f4f4; display:inline-block; padding:2px 6px; border-radius:4px;">
+                                    <!-- <div style="font-family:monospace; font-size:0.85rem; color:var(--text-light); background:#f4f4f4; display:inline-block; padding:2px 6px; border-radius:4px;">
                                         <?= htmlspecialchars($row['barcode']) ?>
-                                    </div>
+                                    </div> -->
                                     <div style="font-size:0.8rem; color:#888; margin-top:4px;">
                                         <?= htmlspecialchars($row['category']) ?>
                                     </div>
