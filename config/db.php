@@ -1,8 +1,8 @@
 <?php
  $host = 'localhost';
  $db   = 'vts_doc_db';
- $user = 'root'; // Change for production
- $pass = '';     // Change for production
+ $user = 'root'; 
+ $pass = '';    
  $charset = 'utf8mb4';
 
  $dsn = "mysql:host=$host;dbname=$db;charset=$charset";

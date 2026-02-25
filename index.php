@@ -1,22 +1,31 @@
 <?php
-
 require_once 'config/db.php';
 require_once 'config/functions.php';
 
-// REDIRECT IF ALREADY LOGGED IN
-if (isLoggedIn()) {
-    $role = $_SESSION['role'] ?? '';
-    
-    if ($role == 'requestor') {
-        redirect('requestor/dashboard.php');
-    } else {
-        // Admin and Staff go to the same dashboard area
-        redirect('admin/dashboard.php');
+// --- REDIRECT IF LOGGED IN ---
+if (isLoggedIn() && isset($_SESSION['active_role'])) {
+    $active = $_SESSION['active_role'];
+    switch ($active) {
+        case 'requestor':
+            redirect('requestor/dashboard.php');
+            break;
+        case 'hod':
+            redirect('hod/dashboard.php');
+            break;
+        case 'admin':
+            redirect('admin/dashboard.php');
+            break;
+        case 'operations':
+            redirect('operations/dashboard.php');
+            break;
+        default:
+            session_destroy();
+            redirect('index.php');
     }
 }
 
- $error = '';
-if ($_SERVER['REQUEST_METHOD'] == 'POST') {
+$error = '';
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $username = trim($_POST['username']);
     $password = $_POST['password'];
 
@@ -25,57 +34,63 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     $user = $stmt->fetch();
 
     if ($user && password_verify($password, $user['password'])) {
-        // 1. Set Basic Session Variables
+
+        // --- SESSION SETUP ---
         $_SESSION['user_id'] = $user['id'];
         $_SESSION['username'] = $user['username'];
         $_SESSION['full_name'] = $user['full_name'];
-        $_SESSION['role'] = $user['role']; 
+        $_SESSION['role'] = $user['role']; // base role
 
+        // --- ACTIVE ROLE LOGIC ---
         $dbRole = $user['role'];
-        $dbActiveRole = $user['active_role'];
+        $dbActive = $user['active_role'];
 
-        // 2. Handle Role Logic
-        if ($dbRole == 'requestor') {
-            // Requestors are fixed. They only have one role.
+        if ($dbRole === 'requestor') {
             $_SESSION['active_role'] = 'requestor';
 
-        } elseif ($dbRole == 'admin') {
-            // Traditional Admins
-            if (empty($dbActiveRole)) {
-                $_SESSION['active_role'] = 'admin';
-                $update = $pdo->prepare("UPDATE users SET active_role = 'admin' WHERE id = ?");
+        } elseif ($dbRole === 'hod') {
+            $_SESSION['active_role'] = $dbActive ?: 'hod';
+            if (!$dbActive) {
+                $update = $pdo->prepare("UPDATE users SET active_role = 'hod' WHERE id = ?");
                 $update->execute([$user['id']]);
-            } else {
-                $_SESSION['active_role'] = $dbActiveRole;
             }
 
-        } elseif ($dbRole == 'staff') {
-            
-            if (empty($dbActiveRole)) {
-
-                $_SESSION['active_role'] = 'admin';
+        } elseif ($dbRole === 'admin') {
+            $_SESSION['active_role'] = $dbActive ?: 'admin';
+            if (!$dbActive) {
                 $update = $pdo->prepare("UPDATE users SET active_role = 'admin' WHERE id = ?");
                 $update->execute([$user['id']]);
-            } else {
+            }
 
-                $_SESSION['active_role'] = $dbActiveRole;
+        } elseif ($dbRole === 'operations') {
+            $_SESSION['active_role'] = $dbActive ?: 'operations';
+            if (!$dbActive) {
+                $update = $pdo->prepare("UPDATE users SET active_role = 'operations' WHERE id = ?");
+                $update->execute([$user['id']]);
             }
         }
 
-        // 3. Log Login
+        // --- LOG LOGIN ---
         $log = $pdo->prepare("INSERT INTO audit_logs (user_id, action, timestamp, details) VALUES (?, 'User Logged In', NOW(), ?)");
-        $details = json_encode([
-            'base_role' => $dbRole,
-            'active_role' => $_SESSION['active_role']
-        ]);
-        $log->execute([$user['id'], $details]);
+        $log->execute([$user['id'], json_encode(['base_role' => $dbRole, 'active_role' => $_SESSION['active_role']])]);
 
-        // 4. Redirect
-        if ($dbRole == 'requestor') {
-            redirect('requestor/dashboard.php');
-        } else {
-            // Both 'admin' and 'staff' (if acting as admin) go here
-            redirect('admin/dashboard.php');
+        // --- REDIRECT BASED ON ACTIVE ROLE ---
+        switch ($_SESSION['active_role']) {
+            case 'requestor':
+                redirect('requestor/dashboard.php');
+                break;
+            case 'hod':
+                redirect('hod/dashboard.php');
+                break;
+            case 'admin':
+                redirect('admin/dashboard.php');
+                break;
+            case 'operations':
+                redirect('operations/dashboard.php');
+                break;
+            default:
+                session_destroy();
+                redirect('index.php');
         }
 
     } else {

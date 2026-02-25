@@ -1,23 +1,55 @@
 <?php
 require_once '../config/db.php';
 require_once '../config/functions.php';
-session_start(); // pastikan session start
 
-// 1. Check new role
-if (isset($_POST['new_role']) && isset($_SESSION['user_id'])) {
-    $new_role = $_POST['new_role'];
-    $user_id = $_SESSION['user_id'];
-
-    // 2. Update session
-    $_SESSION['active_role'] = $new_role;
-
-    // 3. Update database so it's persistent
-    $stmt = $pdo->prepare("UPDATE users SET active_role = ? WHERE id = ?");
-    $stmt->execute([$new_role, $user_id]);
+// Security Check
+if (!isLoggedIn()) {
+    redirect('../index.php');
 }
 
-// 4. Redirect back to previous page
-$referer = isset($_SERVER['HTTP_REFERER']) ? $_SERVER['HTTP_REFERER'] : '../staff/dashboard.php';
-header("Location: $referer");
-exit;
+if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['new_role'])) {
+    
+    $newRole = $_POST['new_role'];
+    $userId = $_SESSION['user_id'];
+    $baseRole = $_SESSION['role']; // e.g., 'hod', 'admin', 'staff'
+
+    // Validate: Ensure the user is allowed to switch to this role
+    $allowed = false;
+
+    if ($baseRole == 'admin') {
+        // Admin can switch to admin or operations
+        if ($newRole == 'admin' || $newRole == 'operations') $allowed = true;
+    
+    } elseif ($baseRole == 'operations') {
+        // Staff can switch to admin or operations
+        if ($newRole == 'admin' || $newRole == 'operations') $allowed = true;
+    
+    } elseif ($baseRole == 'hod') {
+        // HOD can switch to hod or requestor
+        if ($newRole == 'hod' || $newRole == 'requestor') $allowed = true;
+    }
+
+    if ($allowed) {
+        // 1. Update Database
+        $stmt = $pdo->prepare("UPDATE users SET active_role = ? WHERE id = ?");
+        $stmt->execute([$newRole, $userId]);
+
+        // 2. Update Session
+        $_SESSION['active_role'] = $newRole;
+
+        // 3. Redirect Logic
+        if ($newRole == 'hod') {
+            redirect('../hod/dashboard.php');
+        } elseif ($newRole == 'requestor') {
+            redirect('../requestor/dashboard.php');
+        } elseif ($newRole == 'admin') {
+            redirect('../admin/dashboard.php');
+        } elseif ($newRole == 'operations') {
+            redirect('../operations/dashboard.php');
+        }
+    }
+}
+
+// If something went wrong or not allowed, just go back to index
+redirect('../index.php');
 ?>

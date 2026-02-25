@@ -6,434 +6,516 @@ if (!isAdmin()) {
     redirect('../index.php');
 }
 
- $perPage = 20;
- $page    = isset($_GET['page']) && is_numeric($_GET['page']) ? intval($_GET['page']) : 1;
- $offset  = ($page - 1) * $perPage;
+// --- DATE RANGE LOGIC ---
+$default_from = date('Y-m-01'); // First day of current month
+$default_to = date('Y-m-d');    // Today
 
-// --- SEARCH LOGIC (Applied on top of Statuses) ---
- $searchSQL = '';
- $searchTerm = '';
-if (isset($_GET['search']) && !empty($_GET['search'])) {
-    $searchTerm = trim($_GET['search']);
-    // Search in file name, username, or department
-    $searchSQL = "AND (f.file_name LIKE :s OR u.username LIKE :s OR f.department LIKE :s)";
-}
+$date_from = $_GET['date_from'] ?? $default_from;
+$date_to = $_GET['date_to'] ?? $default_to;
 
-// --- TIME FILTER LOGIC ---
- $filter = $_GET['filter'] ?? 'all';
- $dateSQL = '';
+// --- FILTERS ---
+$searchTerm = $_GET['search'] ?? '';
+$statusFilter = $_GET['statuses'] ?? [];
 
-if ($filter === 'biweekly') {
-    $dateSQL = "AND fh.created_at >= DATE_SUB(NOW(), INTERVAL 2 WEEK)";
-} elseif ($filter === 'monthly') {
-    $dateSQL = "AND fh.created_at >= DATE_SUB(NOW(), INTERVAL 1 MONTH)";
-} elseif ($filter === 'quarterly') { 
-    $dateSQL = "AND fh.created_at >= DATE_SUB(NOW(), INTERVAL 3 MONTH)";
-} elseif ($filter === 'yearly') {
-    $dateSQL = "AND fh.created_at >= DATE_SUB(NOW(), INTERVAL 1 YEAR)";
-}
+// --- EXPORT TO EXCEL LOGIC ---
+if (isset($_GET['export'])) {
+    $whereClause = "WHERE DATE(fh.created_at) BETWEEN :from AND :to";
+    $params = [':from' => $date_from, ':to' => $date_to];
 
-// --- STATUS FILTER LOGIC ---
- $statusFilter = $_GET['statuses'] ?? [];
- $statusSQL = '';
+    if (!empty($searchTerm)) {
 
-if (!empty($statusFilter) && is_array($statusFilter)) {
-    $placeholders = [];
-    foreach ($statusFilter as $k => $status) {
-        $placeholders[] = ':st' . $k;
+        $whereClause .= "
+            AND (
+                f.file_name LIKE :search_file
+                OR u.full_name LIKE :search_user
+                OR f.department LIKE :search_dept
+            )
+        ";
+
+        $params[':search_file'] = "%$searchTerm%";
+        $params[':search_user'] = "%$searchTerm%";
+        $params[':search_dept'] = "%$searchTerm%";
     }
-    $statusSQL = "AND fh.action IN (" . implode(',', $placeholders) . ")";
-}
+    if (!empty($statusFilter)) {
+        $placeholders = [];
+        foreach ($statusFilter as $k => $status) {
+            $placeholders[] = ":st$k";
+            $params[":st$k"] = $status;
+        }
+        $whereClause .= " AND fh.action IN (" . implode(',', $placeholders) . ")";
+    }
 
-// Combine where clauses
-// Order of application: Date -> Status -> Search
- $whereClause = "WHERE 1=1 $dateSQL $statusSQL $searchSQL";
-
-// --- EXPORT CSV ---
-if (isset($_GET['export']) && $_GET['export'] === 'audit') {
-    header('Content-Type: text/csv');
-    header('Content-Disposition: attachment; filename="audit_logs_' . date('Y-m-d') . '.csv"');
-
-    $output = fopen('php://output', 'w');
-    fputcsv($output, ['Timestamp', 'User', 'Status', 'Department', 'File Name', 'Duration']);
-
-    $sql = "
-        SELECT
-            fh.created_at AS timestamp,
-            CONCAT(COALESCE(u.username, 'Unknown'), ' (', COALESCE(fh.performed_role, 'Unknown'), ')') AS user_with_role,
-            fh.action AS status,
-            f.department,
-            f.file_name,
-            (SELECT MAX(created_at) FROM file_history fh2 WHERE fh2.file_id = fh.file_id AND fh2.action = 'File Retrieved') AS time_retrieved,
-            (SELECT MAX(created_at) FROM file_history fh3 WHERE fh3.file_id = fh.file_id AND fh3.action = 'Released') AS time_released
-        FROM file_history fh
-        JOIN files f ON fh.file_id = f.id
-        LEFT JOIN users u ON fh.performed_by = u.id
-        $whereClause
-        ORDER BY fh.created_at DESC
-    ";
+    $sql = "SELECT fh.created_at, fh.action, fh.performed_role, f.department, f.file_name, 
+                   u.full_name, u.username, r.released_at, r.retrieved_at, u_assign.full_name as assigned_name
+            FROM file_history fh
+            JOIN files f ON fh.file_id = f.id
+            LEFT JOIN users u ON fh.performed_by = u.id
+            LEFT JOIN requests r ON fh.request_id = r.id
+            LEFT JOIN users u_assign ON r.assigned_to = u_assign.id
+            $whereClause ORDER BY fh.created_at DESC";
 
     $stmt = $pdo->prepare($sql);
-    if (!empty($searchTerm)) $stmt->bindValue(':s', "%$searchTerm%");
-    if (!empty($statusFilter)) {
-        foreach ($statusFilter as $k => $status) {
-            $stmt->bindValue(':st'.$k, $status);
-        }
-    }
-    $stmt->execute();
+    $stmt->execute($params);
+    $data = $stmt->fetchAll();
 
-    while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
-        $retrieved = $row['time_retrieved'];
-        $released = $row['time_released'];
-        $duration = 0;
+    // Generate Excel
+    $filename = "Audit_Report_{$date_from}_to_{$date_to}.xls";
+    header("Content-Type: application/vnd.ms-excel");
+    header("Content-Disposition: attachment; filename=\"$filename\"");
+    header("Pragma: no-cache");
+    header("Expires: 0");
+
+    echo '<html><head><meta charset="UTF-8"></head><body>';
+    echo '<table border="1">';
+    echo '<tr style="background-color:#f3f4f6; font-weight:bold;">
+            <th>Timestamp</th><th>User (Role)</th><th>Action</th><th>Department</th><th>File Name</th><th>Processing Time</th>
+          </tr>';
+
+    foreach ($data as $row) {
+        // Smart User Logic
+        $userDisplay = 'System';
+        if (!empty($row['full_name'])) $userDisplay = $row['full_name'];
+        elseif (!empty($row['assigned_name'])) $userDisplay = $row['assigned_name'] . ' (Op)';
+        elseif (!empty($row['username'])) $userDisplay = $row['username'];
         
-        if ($retrieved && $released) {
-            $start = new DateTime($retrieved);
-            $end = new DateTime($released);
-            $diff = $start->diff($end);
-            $duration = ($diff->h * 60) + $diff->i;
-        }
-        
-        $slaStatus = ($duration > 20) ? ' (SLA BREACH)' : '';
-        $durationText = ($duration > 0) ? $duration . ' mins' : 'Pending';
+        $role = $row['performed_role'] ?? 'System';
+        $userWithRole = "$userDisplay ($role)";
 
-        fputcsv($output, [
-            $row['timestamp'],
-            $row['user_with_role'],
-            $row['status'] . $slaStatus,
-            $row['department'],
-            $row['file_name'],
-            $durationText
-        ]);
+        // Duration Logic
+        $durationText = '-';
+        if ($row['action'] === 'Released' && $row['retrieved_at'] && $row['released_at']) {
+            $diff = (new DateTime($row['retrieved_at']))->diff(new DateTime($row['released_at']));
+            $mins = ($diff->h * 60) + $diff->i;
+            $durationText = $mins . ' mins';
+            if ($mins > 20) $durationText .= ' (Over SLA)';
+        }
+
+        echo '<tr>';
+        echo '<td>' . $row['created_at'] . '</td>';
+        echo '<td>' . $userWithRole . '</td>';
+        echo '<td>' . $row['action'] . '</td>';
+        echo '<td>' . $row['department'] . '</td>';
+        echo '<td>' . $row['file_name'] . '</td>';
+        echo '<td>' . $durationText . '</td>';
+        echo '</tr>';
     }
 
-    fclose($output);
+    echo '</table></body></html>';
     exit;
 }
 
-// --- COUNT TOTAL ---
- $countSQL = "SELECT COUNT(*) FROM file_history fh JOIN files f ON fh.file_id = f.id LEFT JOIN users u ON fh.performed_by = u.id $whereClause";
- $stmtCount = $pdo->prepare($countSQL);
+// --- PAGINATION SETUP ---
+$perPage = 20;
+$page = isset($_GET['page']) && is_numeric($_GET['page']) ? (int)$_GET['page'] : 1;
+$offset = ($page - 1) * $perPage;
 
-if (!empty($searchTerm)) $stmtCount->bindValue(':s', "%$searchTerm%");
+// --- BUILD WHERE CLAUSE FOR VIEW ---
+$whereClause = "WHERE DATE(fh.created_at) BETWEEN :from AND :to";
+$params = [':from' => $date_from, ':to' => $date_to];
+
+if (!empty($searchTerm)) {
+
+    $whereClause .= "
+        AND (
+            f.file_name LIKE :search_file
+            OR u.full_name LIKE :search_user
+            OR f.department LIKE :search_dept
+        )
+    ";
+
+    $params[':search_file'] = "%$searchTerm%";
+    $params[':search_user'] = "%$searchTerm%";
+    $params[':search_dept'] = "%$searchTerm%";
+}
+
 if (!empty($statusFilter)) {
+    $placeholders = [];
     foreach ($statusFilter as $k => $status) {
-        $stmtCount->bindValue(':st'.$k, $status);
+        $placeholders[] = ":st$k";
+        $params[":st$k"] = $status;
     }
+    $whereClause .= " AND fh.action IN (" . implode(',', $placeholders) . ")";
 }
- $stmtCount->execute();
- $totalRows  = $stmtCount->fetchColumn();
- $totalPages = ceil($totalRows / $perPage);
 
-// --- FETCH DATA ---
- $sql = "
-    SELECT
-        fh.created_at AS timestamp,
-        fh.action AS status,
-        f.department,
-        f.file_name,
-        CONCAT(COALESCE(u.username, 'Unknown'), ' (', COALESCE(fh.performed_role, 'Unknown'), ')') AS user_with_role,
-        (SELECT MAX(created_at) FROM file_history fh2 WHERE fh2.file_id = fh.file_id AND fh2.action = 'File Retrieved') AS time_retrieved,
-        (SELECT MAX(created_at) FROM file_history fh3 WHERE fh3.file_id = fh.file_id AND fh3.action = 'Released') AS time_released
-    FROM file_history fh
-    JOIN files f ON fh.file_id = f.id
-    LEFT JOIN users u ON fh.performed_by = u.id
-    $whereClause
-    ORDER BY fh.created_at DESC
-    LIMIT $perPage OFFSET $offset
-";
+// Count Total
+$countSQL = "SELECT COUNT(*) FROM file_history fh JOIN files f ON fh.file_id = f.id LEFT JOIN users u ON fh.performed_by = u.id $whereClause";
+$stmtCount = $pdo->prepare($countSQL);
+$stmtCount->execute($params);
+$totalRows = $stmtCount->fetchColumn();
+$totalPages = ceil($totalRows / $perPage);
 
- $stmt = $pdo->prepare($sql);
+// Fetch Data
+$sql = "SELECT fh.created_at, fh.action, fh.performed_by, fh.performed_role, f.department, f.file_name, 
+               u.full_name, u.username, r.released_at, r.retrieved_at, u_assign.full_name as assigned_name
+        FROM file_history fh
+        JOIN files f ON fh.file_id = f.id
+        LEFT JOIN users u ON fh.performed_by = u.id
+        LEFT JOIN requests r ON fh.request_id = r.id
+        LEFT JOIN users u_assign ON r.assigned_to = u_assign.id
+        $whereClause
+        ORDER BY fh.created_at DESC
+        LIMIT :limit OFFSET :offset";
 
-if (!empty($searchTerm)) $stmt->bindValue(':s', "%$searchTerm%");
-if (!empty($statusFilter)) {
-    foreach ($statusFilter as $k => $status) {
-        $stmt->bindValue(':st'.$k, $status);
-    }
-}
- $stmt->execute();
- $logs = $stmt->fetchAll(PDO::FETCH_ASSOC);
+$stmt = $pdo->prepare($sql);
+foreach ($params as $key => $val) $stmt->bindValue($key, $val);
+$stmt->bindValue(':limit', $perPage, PDO::PARAM_INT);
+$stmt->bindValue(':offset', $offset, PDO::PARAM_INT);
+$stmt->execute();
+$logs = $stmt->fetchAll();
 
-// Helper to preserve query params
-function buildQueryString($params = []) {
-    $query = $_GET;
-    foreach ($params as $key => $value) {
-        if ($value === null) {
-            unset($query[$key]);
-        } else {
-            $query[$key] = $value;
-        }
-    }
-    return http_build_query($query);
-}
+// Available Statuses for Filter
+$statusList = ['Requested (Pending HOD)', 'Approved by HOD', 'Retrieval Assigned', 'File Retrieved', 'Released', 'Return Requested', 'Restoration Assigned', 'File Restored', 'Completed', 'Cancelled'];
 
 require_once '../includes/header.php';
 ?>
 
-<style>
-/* Custom UX Styles */
-.status-dropdown-container {
-    position: relative;
-    display: inline-block;
-}
-
-.filter-btn {
-    background-color: white;
-    border: 1px solid #ccc;
-    padding: 8px 16px;
-    border-radius: 4px;
-    cursor: pointer;
-    font-size: 14px;
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    min-width: 140px;
-    justify-content: space-between;
-    transition: all 0.2s;
-}
-.filter-btn:hover {
-    border-color: #999;
-    background-color: #f9f9f9;
-}
-.filter-btn .count-badge {
-    background: #0d47a1;
-    color: white;
-    font-size: 11px;
-    padding: 2px 6px;
-    border-radius: 10px;
-    display: none; /* Hidden unless selected */
-}
-
-.dropdown-menu {
-    display: none;
-    position: absolute;
-    top: 100%;
-    left: 0;
-    background: white;
-    border: 1px solid #ddd;
-    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
-    border-radius: 4px;
-    padding: 10px;
-    width: 200px;
-    z-index: 1000;
-    margin-top: 4px;
-}
-
-.dropdown-menu.show {
-    display: block;
-}
-
-.dropdown-item {
-    display: flex;
-    align-items: center;
-    padding: 6px 8px;
-    cursor: pointer;
-    border-radius: 3px;
-    color: #333;
-    font-size: 14px;
-}
-
-.dropdown-item:hover {
-    background-color: #f0f4f8;
-}
-
-.dropdown-item input[type="checkbox"] {
-    margin-right: 10px;
-    width: 16px;
-    height: 16px;
-    accent-color: #0d47a1;
-}
-
-.sla-badge {
-    display: inline-block;
-    background: #dc2626;
-    color: white;
-    font-size: 0.7rem;
-    padding: 2px 6px;
-    border-radius: 4px;
-    margin-left: 6px;
-    font-weight: bold;
-}
-</style>
-
 <div class="layout-wrapper">
-<?php require_once '../includes/sidebar.php'; ?>
+    <?php require_once '../includes/sidebar.php'; ?>
 
-<div class="main-content">
-<div class="content-area">
-
-<div class="card">
-    
-    <!-- Controls Header -->
-    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px; flex-wrap:wrap; gap:15px;">
-        
-        <h3 style="margin:0;">Audit Logs</h3>
-
-        <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
+    <div class="main-content">
+        <div class="content-area">
             
-            <!-- 1. The Filter Button with Dropdown -->
-            <div class="status-dropdown-container">
-                <button class="filter-btn" onclick="toggleDropdown()">
-                    <span>Filter Status</span>
-                    <span class="count-badge" id="statusCount"><?= !empty($statusFilter) ? count($statusFilter) : '' ?></span>
-                    <span style="font-size:10px;">▼</span>
-                </button>
-                
-                <div class="dropdown-menu" id="statusDropdown">
-                    <form method="GET" action="" id="filterForm" style="margin:0;">
-                        <!-- Preserve other params if needed -->
-                        <?php if(isset($_GET['filter'])): ?><input type="hidden" name="filter" value="<?= htmlspecialchars($_GET['filter']) ?>"><?php endif; ?>
-                        <?php if(isset($_GET['search'])): ?><input type="hidden" name="search" value="<?= htmlspecialchars($_GET['search']) ?>"><?php endif; ?>
-                        <?php if(isset($_GET['page'])): ?><input type="hidden" name="page" value="<?= htmlspecialchars($_GET['page']) ?>"><?php endif; ?>
-
-                        <div class="dropdown-item">
-                            <input type="checkbox" name="statuses[]" value="File Requested" <?= in_array('File Requested', $statusFilter) ? 'checked' : '' ?> onchange="this.form.submit()"> 
-                            <span>File Requested</span>
-                        </div>
-                        <div class="dropdown-item">
-                            <input type="checkbox" name="statuses[]" value="Completed" <?= in_array('Completed', $statusFilter) ? 'checked' : '' ?> onchange="this.form.submit()"> 
-                            <span>Completed</span>
-                        </div>
-                        <div class="dropdown-item">
-                            <input type="checkbox" name="statuses[]" value="Released" <?= in_array('Released', $statusFilter) ? 'checked' : '' ?> onchange="this.form.submit()"> 
-                            <span>Released</span>
-                        </div>
-                        <div class="dropdown-item">
-                            <input type="checkbox" name="statuses[]" value="File Retrieved" <?= in_array('File Retrieved', $statusFilter) ? 'checked' : '' ?> onchange="this.form.submit()"> 
-                            <span>File Retrieved</span>
-                        </div>
-                        <div class="dropdown-item">
-                            <input type="checkbox" name="statuses[]" value="Cancelled" <?= in_array('Cancelled', $statusFilter) ? 'checked' : '' ?> onchange="this.form.submit()"> 
-                            <span>Cancelled</span>
-                        </div>
-                    </form>
+            <!-- Page Header -->
+            <div class="page-header">
+                <div class="page-title">
+                    <h1>Audit Logs & Reports</h1>
+                    <p>System activity history and C-OTF monitoring.</p>
                 </div>
             </div>
 
+            <!-- Filter Bar -->
+            <div class="filter-bar-card">
+                <form method="GET" action="reports.php" class="filter-form-inline">
+                    
+                    <div class="filter-group">
+                        <label>From:</label>
+                        <input type="date" name="date_from" class="modern-input" value="<?= htmlspecialchars($date_from) ?>">
+                    </div>
 
-            <form method="GET" action="" style="display:flex; gap:0;">
-                <?php if(isset($_GET['statuses'])): ?><?php foreach($_GET['statuses'] as $st): ?><input type="hidden" name="statuses[]" value="<?= htmlspecialchars($st) ?>"><?php endforeach; ?><?php endif; ?>
-                <?php if(isset($_GET['filter'])): ?><input type="hidden" name="filter" value="<?= htmlspecialchars($_GET['filter']) ?>"><?php endif; ?>
-                
-                <input type="text" id="searchInput" name="search"
-                       placeholder="Search file, user, or dept..."
-                       value="<?= isset($_GET['search']) ? htmlspecialchars($_GET['search']) : '' ?>"
-                       style="padding:8px; border:1px solid #ccc; border-right:none; border-radius:4px 0 0 4px; width:250px;">
-                <button type="submit" class="btn" style="padding:8px 12px; border-radius:0 4px 4px 0;">Search</button>
-                <?php if(isset($_GET['search'])): ?>
-                    <a href="?<?= buildQueryString(['search' => null]) ?>" style="padding:8px 12px; background:#eee; text-decoration:none; border-radius:4px; font-size:0.9em;">✕</a>
+                    <div class="filter-group">
+                        <label>To:</label>
+                        <input type="date" name="date_to" class="modern-input" value="<?= htmlspecialchars($date_to) ?>">
+                    </div>
+
+                    <div class="dropdown-filter">
+                        <button type="button" class="dropdown-btn" onclick="toggleStatusDropdown()">
+                            <span>Filter Status</span>
+                            <?php if(!empty($statusFilter)): ?>
+                                <span class="badge-count"><?= count($statusFilter) ?></span>
+                            <?php endif; ?>
+                            <span class="arrow">▼</span>
+                        </button>
+
+                        <div id="statusDropdown" class="dropdown-content">
+                            <?php foreach($statusList as $st): ?>
+                                <label class="checkbox-label">
+                                    <input type="checkbox"
+                                        name="statuses[]"
+                                        value="<?= $st ?>"
+                                        <?= in_array($st, $statusFilter) ? 'checked' : '' ?>>
+                                    <span><?= $st ?></span>
+                                </label>
+                            <?php endforeach; ?>
+
+                            <div class="dropdown-actions">
+                                <button type="submit" class="btn-apply">Apply</button>
+                                <a href="reports.php" class="btn-reset">Reset</a>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="search-box-modern" style="min-width: 200px; flex: 0;">
+                        <input type="text" name="search" placeholder="Search File/User..." value="<?= htmlspecialchars($searchTerm) ?>">
+                    </div>
+
+                    <button type="submit" class="btn btn-dark">Filter</button>
+                    
+                    <a href="?export=1&date_from=<?= $date_from ?>&date_to=<?= $date_to ?>&search=<?= urlencode($searchTerm) ?><?= !empty($statusFilter) ? '&statuses[]='.implode('&statuses[]=', $statusFilter) : '' ?>" class="btn btn-success">
+                        Export Excel
+                    </a>
+                </form>
+            </div>
+
+            <!-- Data Table Card -->
+            <div class="card table-card">
+                <div class="table-responsive">
+                    <table class="modern-table">
+                        <thead>
+                            <tr>
+                                <th>Timestamp</th>
+                                <th>User</th>
+                                <th>Action</th>
+                                <th>Department</th>
+                                <th>File Name</th>
+                                <th>Duration (SLA)</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <?php if($logs): ?>
+                                <?php foreach($logs as $row): 
+                                    // Smart User Logic
+                                    $userDisplay = 'Unknown';
+                                    if (!empty($row['full_name'])) $userDisplay = $row['full_name'];
+                                    elseif (!empty($row['assigned_name'])) $userDisplay = $row['assigned_name'] . ' (Op)';
+                                    elseif (!empty($row['username'])) $userDisplay = $row['username'];
+                                    
+                                    $role = $row['performed_role'] ?? 'System';
+                                    
+                                    // Duration Logic
+                                    $duration = 0;
+                                    $durationText = '-';
+                                    $isOverSLA = false;
+                                    
+                                    if ($row['action'] === 'Released' && $row['retrieved_at'] && $row['released_at']) {
+                                        $diff = (new DateTime($row['retrieved_at']))->diff(new DateTime($row['released_at']));
+                                        $duration = ($diff->h * 60) + $diff->i;
+                                        $durationText = $duration . ' mins';
+                                        if ($duration > 20) $isOverSLA = true;
+                                    }
+                                ?>
+                                <tr class="<?= $isOverSLA ? 'row-danger' : '' ?>">
+                                    <td>
+                                        <div class="cell-main">
+                                            <span class="cell-text"><?= date('M j, Y', strtotime($row['created_at'])) ?></span>
+                                            <span class="cell-sub"><?= date('g:i A', strtotime($row['created_at'])) ?></span>
+                                        </div>
+                                    </td>
+                                    <td>
+                                        <div class="cell-main">
+                                            <span class="cell-text"><?= sanitize($userDisplay) ?></span>
+                                            <span class="cell-sub"><?= sanitize($role) ?></span>
+                                        </div>
+                                    </td>
+                                    <td>
+                                        <span class="status-badge <?= $isOverSLA ? 'status-red' : 'status-gray' ?>">
+                                            <?= sanitize($row['action']) ?>
+                                            <?php if($isOverSLA): ?> (OTF) <?php endif; ?>
+                                        </span>
+                                    </td>
+                                    <td><?= sanitize($row['department']) ?></td>
+                                    <td>
+                                         <span class="cell-text"><?= sanitize($row['file_name']) ?></span>
+                                    </td>
+                                    <td>
+                                        <?php if($isOverSLA): ?>
+                                            <span style="color:#b91c1c; font-weight:700;"><?= $durationText ?></span>
+                                        <?php else: ?>
+                                            <span class="cell-sub"><?= $durationText ?></span>
+                                        <?php endif; ?>
+                                    </td>
+                                </tr>
+                                <?php endforeach; ?>
+                            <?php else: ?>
+                                <tr>
+                                    <td colspan="6" class="empty-cell">
+                                        <div class="empty-state">
+                                            <h3>No Logs Found</h3>
+                                            <p>No activity matches your selected date range or filters.</p>
+                                        </div>
+                                    </td>
+                                </tr>
+                            <?php endif; ?>
+                        </tbody>
+                    </table>
+                </div>
+
+                <!-- Pagination -->
+                <?php if ($totalPages > 1): ?>
+                <div class="pagination-bar">
+                    <div class="pagination-info">
+                        Page <?= $page ?> of <?= $totalPages ?>
+                    </div>
+                    <div class="pagination-links">
+                        <?php 
+                        $queryBase = http_build_query(array_filter($_GET, function($k) { return $k !== 'page'; }, ARRAY_FILTER_USE_KEY));
+                        ?>
+                        
+                        <?php if($page > 1): ?>
+                            <a href="?page=1&<?= $queryBase ?>" class="page-btn">«</a>
+                            <a href="?page=<?= $page-1 ?>&<?= $queryBase ?>" class="page-btn">‹</a>
+                        <?php endif; ?>
+
+                        <?php for($i = 1; $i <= $totalPages; $i++): ?>
+                            <a href="?page=<?= $i ?>&<?= $queryBase ?>" class="page-btn <?= $i==$page ? 'active' : '' ?>"><?= $i ?></a>
+                        <?php endfor; ?>
+
+                        <?php if($page < $totalPages): ?>
+                            <a href="?page=<?= $page+1 ?>&<?= $queryBase ?>" class="page-btn">›</a>
+                            <a href="?page=<?= $totalPages ?>&<?= $queryBase ?>" class="page-btn">»</a>
+                        <?php endif; ?>
+                    </div>
+                </div>
                 <?php endif; ?>
-            </form>
-
-            <!-- Export -->
-            <a href="?<?= buildQueryString(['export' => 'audit', 'page' => null]) ?>" 
-               class="btn" style="background:#2e7d32; color:white; padding:8px 16px; text-decoration:none; border-radius:4px;">
-               Export
-            </a>
+            </div>
 
         </div>
     </div>
-
-    <!-- Table -->
-    <table id="auditTable" style="width:100%; border-collapse: collapse; font-size: 0.9rem;">
-        <thead>
-            <tr style="background: #f8f9fa; border-bottom: 2px solid #dee2e6; text-align: left;">
-                <th style="padding:12px;">Timestamp</th>
-                <th style="padding:12px;">User</th>
-                <th style="padding:12px;">Status</th>
-                <th style="padding:12px;">Department</th>
-                <th style="padding:12px;">File Name</th>
-                <th style="padding:12px;">Duration</th>
-            </tr>
-        </thead>
-        <tbody>
-
-<?php if ($logs): ?>
-    <?php foreach ($logs as $row): 
-        $duration = 0;
-        $retrieved = $row['time_retrieved'] ?? null;
-        $released = $row['time_released'] ?? null;
-
-        if ($retrieved && $released) {
-            $start = new DateTime($retrieved);
-            $end = new DateTime($released);
-            $diff = $start->diff($end);
-            $duration = ($diff->h * 60) + $diff->i;
-        }
-
-        $isOverSLA = ($duration > 20);
-        $durationText = ($duration > 0) ? $duration . " mins" : "Pending";
-        
-        $rowStyle = ($isOverSLA) ? "background-color: #fef2f2; color: #991b1b;" : "";
-    ?>
-    <tr style="<?= $rowStyle ?> border-bottom: 1px solid #eee;">
-        <td style="padding:12px; vertical-align:middle;"><?= $row['timestamp'] ?></td>
-        <td style="padding:12px; vertical-align:middle;"><?= sanitize($row['user_with_role']) ?></td>
-        <td style="padding:12px; vertical-align:middle; font-weight:600;">
-            <?= sanitize($row['status']) ?>
-            <?php if($isOverSLA): ?>
-                <span class="sla-badge">SLA BREACH</span>
-            <?php endif; ?>
-        </td>
-        <td style="padding:12px; vertical-align:middle;"><?= sanitize($row['department']) ?></td>
-        <td style="padding:12px; vertical-align:middle;"><?= sanitize($row['file_name']) ?></td>
-        <td style="padding:12px; vertical-align:middle; font-weight:bold;">
-            <?= $durationText ?>
-        </td>
-    </tr>
-    <?php endforeach; ?>
-<?php else: ?>
-    <tr>
-        <td colspan="6" style="text-align:center; padding:30px; color:#666;">
-            No records found.
-        </td>
-    </tr>
-<?php endif; ?>
-
-        </tbody>
-    </table>
-
-    <!-- Pagination -->
-    <?php if ($totalPages > 1): ?>
-    <div style="margin-top:25px; display:flex; justify-content:center; gap:5px;">
-        <?php for($i=1;$i<=$totalPages;$i++): ?>
-            <a href="?<?= buildQueryString(['page' => $i]) ?>"
-               style="padding:6px 12px; border:1px solid #ccc; border-radius:4px; text-decoration:none; color:#333; <?= $i==$page?'background:#0d47a1;color:white;':'background:white;' ?>">
-               <?= $i ?>
-            </a>
-        <?php endfor; ?>
-    </div>
-    <?php endif; ?>
-
-</div>
-</div>
-</div>
 </div>
 
 <script>
-function toggleDropdown() {
-    var dropdown = document.getElementById("statusDropdown");
-    dropdown.classList.toggle("show");
+function toggleStatusDropdown() {
+    document.getElementById("statusDropdown").classList.toggle("show-dropdown");
 }
 
-// Close the dropdown if the user clicks outside of it
-window.onclick = function(event) {
-    if (!event.target.matches('.filter-btn') && !event.target.matches('.filter-btn *')) {
-        var dropdowns = document.getElementsByClassName("dropdown-menu");
-        for (var i = 0; i < dropdowns.length; i++) {
-            var openDropdown = dropdowns[i];
-            if (openDropdown.classList.contains('show')) {
-                openDropdown.classList.remove('show');
-            }
-        }
+window.addEventListener('click', function(e) {
+    const dropdown = document.getElementById("statusDropdown");
+    const btn = document.querySelector(".dropdown-btn");
+
+    if (!btn.contains(e.target) && !dropdown.contains(e.target)) {
+        dropdown.classList.remove("show-dropdown");
     }
+});
+</script>
+
+<style>
+/* Layout */
+.content-area { padding: 24px; background: #f3f4f6; min-height: calc(100vh - 60px); }
+
+/* Page Header */
+.page-header { margin-bottom: 24px; }
+.page-title h1 { font-size: 1.5rem; color: #111827; margin: 0 0 4px 0; font-weight: 700; }
+.page-title p { margin: 0; color: #6b7280; font-size: 0.9rem; }
+
+/* Cards */
+.card { background: #fff; border-radius: 10px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }
+.table-card { overflow: hidden; }
+
+/* Filter Bar */
+.filter-bar-card { padding: 16px 20px; margin-bottom: 16px; }
+.filter-form-inline { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+.filter-group { display: flex; align-items: center; gap: 8px; }
+.filter-group label { font-size: 0.85rem; color: #6b7280; font-weight: 500; }
+
+.modern-input { padding: 10px 12px; border: 1px solid #e5e7eb; border-radius: 8px; font-size: 0.9rem; background: #f9fafb; }
+.modern-input:focus { border-color: #2563eb; background: #fff; outline: none; }
+.modern-select { padding: 10px 12px; border: 1px solid #e5e7eb; border-radius: 8px; background: #f9fafb; font-size: 0.9rem; min-width: 150px; }
+
+.search-box-modern { position: relative; flex: 1; min-width: 250px; }
+.search-box-modern input { width: 100%; padding: 10px 15px; border: 1px solid #e5e7eb; border-radius: 8px; font-size: 0.9rem; background: #f9fafb; }
+
+/* Table */
+.table-responsive { overflow-x: auto; }
+.modern-table { width: 100%; border-collapse: collapse; min-width: 800px; }
+.modern-table th { text-align: left; padding: 12px 20px; font-size: 0.75rem; text-transform: uppercase; color: #6b7280; background: #f9fafb; border-bottom: 1px solid #e5e7eb; letter-spacing: 0.05em; }
+.modern-table td { padding: 16px 20px; border-bottom: 1px solid #f3f4f6; vertical-align: middle; }
+
+.cell-main { display: flex; flex-direction: column; gap: 2px; }
+.cell-title { font-weight: 600; color: #111827; font-size: 0.95rem; }
+.cell-text { font-weight: 500; color: #374151; font-size: 0.9rem; }
+.cell-sub { font-size: 0.8rem; color: #9ca3af; }
+
+.row-danger { background-color: #fef2f2; }
+.row-danger:hover { background-color: #fee2e2; }
+
+/* Status Badges */
+.status-badge { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 20px; font-size: 0.75rem; font-weight: 600; }
+.status-green { background: #dcfce7; color: #166534; }
+.status-orange { background: #ffedd5; color: #c2410c; }
+.status-red { background: #fee2e2; color: #991b1b; }
+.status-gray { background: #f3f4f6; color: #4b5563; }
+
+/* Buttons */
+.btn { padding: 8px 16px; border-radius: 6px; font-size: 0.85rem; font-weight: 600; border: none; cursor: pointer; transition: all 0.2s; text-decoration: none; display: inline-flex; align-items: center; gap: 6px; }
+.btn-secondary { background: #f3f4f6; color: #374151; }
+.btn-dark { background: #1f2937; color: white; }
+.btn-success { background: #059669; color: white; }
+.btn-success:hover { background: #047857; }
+
+/* Empty State */
+.empty-cell { padding: 40px; text-align: center; }
+.empty-state h3 { margin: 0 0 5px 0; color: #374151; }
+.empty-state p { margin: 0; color: #6b7280; font-size: 0.9rem; }
+
+/* Pagination */
+.pagination-bar { display: flex; justify-content: space-between; align-items: center; padding: 16px 20px; border-top: 1px solid #e5e7eb; background: #f9fafb; }
+.pagination-info { font-size: 0.85rem; color: #6b7280; }
+.pagination-links { display: flex; gap: 4px; }
+.page-btn { padding: 6px 12px; border: 1px solid #d1d5db; background: #fff; color: #374151; text-decoration: none; border-radius: 6px; font-size: 0.85rem; }
+.page-btn.active { background: #2563eb; color: white; border-color: #2563eb; }
+
+.dropdown-filter { position: relative; }
+
+.dropdown-btn {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 15px;
+    background: #fff;
+    border: 1px solid #e5e7eb;
+    border-radius: 8px;
+    cursor: pointer;
+    font-weight: 500;
+    color: #374151;
 }
 
-// Show/Hide the count badge on the button
-var countBadge = document.getElementById('statusCount');
-if(countBadge.innerText.trim() !== "") {
-    countBadge.style.display = "inline-block";
+.dropdown-content {
+    display: none;
+    position: absolute;
+    top: 110%;
+    right: 0;
+    width: 260px;
+    background: white;
+    border-radius: 8px;
+    box-shadow: 0 10px 25px rgba(0,0,0,0.1);
+    z-index: 100;
+    padding: 15px;
+    border: 1px solid #e5e7eb;
+    max-height: 300px;
+    overflow-y: auto;
 }
-</script>
+
+.show-dropdown { display: block !important; }
+
+.checkbox-label {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 6px 0;
+    cursor: pointer;
+    font-size: 0.9rem;
+    color: #374151;
+}
+
+.badge-count {
+    background: #3b82f6;
+    color: white;
+    border-radius: 50%;
+    width: 20px;
+    height: 20px;
+    font-size: 0.7rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.dropdown-actions {
+    margin-top: 10px;
+    border-top: 1px solid #eee;
+    padding-top: 10px;
+    display: flex;
+    gap: 10px;
+}
+
+.btn-apply {
+    flex: 1;
+    padding: 8px;
+    background: #111827;
+    color: white;
+    border: none;
+    border-radius: 5px;
+    cursor: pointer;
+}
+
+.btn-reset {
+    flex: 1;
+    text-align: center;
+    padding: 8px;
+    background: #f3f4f6;
+    color: #374151;
+    border-radius: 5px;
+    text-decoration: none;
+    font-size: 0.85rem;
+}
+</style>
 
 <?php require_once '../includes/footer.php'; ?>

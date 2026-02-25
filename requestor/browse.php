@@ -1,304 +1,253 @@
 <?php
 require_once '../config/db.php';
 require_once '../config/functions.php';
-require_once '../includes/header.php'; // Uses Dynamic Header
+require_once '../includes/header.php';
 
-// --- SECURITY CHECK ---
-if (!isLoggedIn()) {
+if (!isLoggedIn()) redirect('../index.php');
+
+$base_role = $_SESSION['role'] ?? '';
+if ($base_role !== 'requestor' && $base_role !== 'hod') {
     redirect('../index.php');
 }
 
-// Only allow Requestors
-if (isset($_SESSION['role']) && $_SESSION['role'] !== 'requestor') {
-    redirect('../index.php');
-}
+$current_page = basename($_SERVER['PHP_SELF']);
 
-// Include Requestor Sidebar
- $current_page = basename($_SERVER['PHP_SELF']);
-
-// --- DYNAMIC FILTER DATA FETCHING ---
-
-// 1. Fetch Unique Departments
- $deptQuery = "SELECT DISTINCT department FROM files ORDER BY department ASC";
- $deptStmt = $pdo->query($deptQuery);
- $departments = $deptStmt->fetchAll(PDO::FETCH_COLUMN);
-
-// 2. Fetch Unique Statuses
- $statusQuery = "SELECT DISTINCT status FROM files ORDER BY status ASC";
- $statusStmt = $pdo->query($statusQuery);
- $statuses = $statusStmt->fetchAll(PDO::FETCH_COLUMN);
-
+// --- DYNAMIC FILTER DATA ---
+$deptStmt = $pdo->query("SELECT DISTINCT department FROM files ORDER BY department ASC");
+$departments = $deptStmt->fetchAll(PDO::FETCH_COLUMN);
 
 // --- PAGINATION SETUP ---
- $limit = 10; // Show 10 rows per page
- $page = isset($_GET['page']) && is_numeric($_GET['page']) ? (int)$_GET['page'] : 1;
- $offset = ($page - 1) * $limit;
+$limit = 20; // Changed to 20 per page
+$page = isset($_GET['page']) && is_numeric($_GET['page']) ? (int)$_GET['page'] : 1;
+$offset = ($page - 1) * $limit;
 
 // --- FILTERS SETUP ---
- $where = [];
- $params = []; // This will now store key-value pairs like ['search' => '%term%']
+$where = [];
+$params = [];
 
-// Default to available files ONLY if no availability filter is set
+// 1. Default Status Filter (Show ONLY available files by default)
 if (!isset($_GET['status']) || empty($_GET['status'])) {
     $where[] = "f.status = 'available'";
 }
 
-// Search Filter (Changed to named parameter :search_term)
+// 2. Search Filter (Removed file_number/barcode)
 if (!empty($_GET['search'])) {
-    $searchTerm = "%" . $_GET['search'] . "%";
-    $where[] = "(f.file_name LIKE :search_term OR f.barcode LIKE :search_term OR f.department LIKE :search_term)";
-    $params[':search_term'] = $searchTerm;
+
+    $where[] = "
+        (
+            f.file_name LIKE :search_name
+            OR f.department LIKE :search_dept
+            OR f.allocation LIKE :search_alloc
+        )
+    ";
+
+    $params[':search_name']  = "%" . $_GET['search'] . "%";
+    $params[':search_dept']  = "%" . $_GET['search'] . "%";
+    $params[':search_alloc'] = "%" . $_GET['search'] . "%";
 }
 
-// Department Filter (Changed to named parameter :dept_filter)
+// 3. Department Filter
 if (!empty($_GET['department']) && $_GET['department'] !== 'all') {
-    $where[] = "f.department = :dept_filter";
-    $params[':dept_filter'] = $_GET['department'];
-}
-
-// Availability/Status Filter (Changed to named parameter :status_filter)
-if (!empty($_GET['status']) && $_GET['status'] !== 'all') {
-    $where[] = "f.status = :status_filter";
-    $params[':status_filter'] = $_GET['status'];
+    $where[] = "f.department = :dept";
+    $params[':dept'] = $_GET['department'];
 }
 
 // --- BUILD QUERIES ---
 
-// 1. Count Total Rows for Pagination
- $sqlCount = "SELECT COUNT(*) FROM files f ";
+// Build WHERE string
+$whereSQL = "";
 if (!empty($where)) {
-    $sqlCount .= "WHERE " . implode(" AND ", $where);
+    $whereSQL = "WHERE " . implode(" AND ", $where);
 }
 
- $stmtCount = $pdo->prepare($sqlCount);
-// Bind parameters for count query
+// 1. Count Query
+$sqlCount = "SELECT COUNT(*) FROM files f $whereSQL";
+$stmtCount = $pdo->prepare($sqlCount);
+
+// Bind Count Params
 foreach ($params as $key => $value) {
     $stmtCount->bindValue($key, $value);
 }
- $stmtCount->execute();
- $total_rows = $stmtCount->fetchColumn();
- $total_pages = ceil($total_rows / $limit);
+$stmtCount->execute();
+$total_rows = $stmtCount->fetchColumn();
+$total_pages = ceil($total_rows / $limit);
 
-// 2. Fetch Data for Current Page
- $sql = "SELECT f.*, f.location_text, l.room, l.rack, l.box 
-        FROM files f 
-        LEFT JOIN locations l ON f.location_id = l.id ";
+// 2. Data Query (Removed location JOIN)
+$sql = "SELECT f.* FROM files f 
+        $whereSQL
+        ORDER BY f.id DESC LIMIT :limit OFFSET :offset";
 
-if (!empty($where)) {
-    $sql .= "WHERE " . implode(" AND ", $where) . " ";
-}
+$stmt = $pdo->prepare($sql);
 
- $sql .= "ORDER BY f.id DESC LIMIT :limit OFFSET :offset";
-
- $stmt = $pdo->prepare($sql);
-
-// --- BINDING PARAMETERS (100% Named) ---
-
-// 1. Bind Filter/Search parameters (e.g., :search_term)
+// Bind Data Params (Filters)
 foreach ($params as $key => $value) {
     $stmt->bindValue($key, $value);
 }
 
-// 2. Bind Pagination parameters
- $stmt->bindValue(':limit', $limit, PDO::PARAM_INT);
- $stmt->bindValue(':offset', $offset, PDO::PARAM_INT);
+// Bind Pagination Params (Integers)
+$stmt->bindValue(':limit', $limit, PDO::PARAM_INT);
+$stmt->bindValue(':offset', $offset, PDO::PARAM_INT);
 
- $stmt->execute();
- $files = $stmt;
-
+$stmt->execute();
+$files = $stmt;
 ?>
 
 <div class="layout-wrapper">
-    <!-- Use Requestor Sidebar -->
-    <div class="sidebar">
-        <a href="../index.php" class="sidebar-brand">VTS Requestor</a>
-        <div class="sidebar-menu">
-            <a href="dashboard.php" class="<?= ($current_page == 'dashboard.php') ? 'active' : ''; ?>">Dashboard</a>
-            <a href="browse.php" class="<?= ($current_page == 'browse.php') ? 'active' : ''; ?>">Browse Files</a>
-            <a href="my_files.php" class="<?= ($current_page == 'my_files.php') ? 'active' : ''; ?>">My History</a>
-        </div>
-    </div>
+    <?php require_once '../includes/sidebar.php'; ?>
 
     <div class="main-content">
         <div class="content-area">
             
-            <!-- FILTER BAR -->
-            <div class="card" style="padding: 20px; margin-bottom: 25px; box-shadow: 0 2px 10px rgba(0,0,0,0.05);">
-                <form method="GET" action="browse.php">
-                    <div style="display:flex; gap: 15px; align-items: center; flex-wrap: wrap;">
-                        <!-- Search -->
-                        <div style="flex: 2; min-width: 250px; position:relative;">
-                            <span style="position:absolute; left:12px; top:10px; color:#999;">&#128269;</span>
-                            <input type="text" name="search" placeholder="Search Name, Barcode, or Dept..." value="<?= isset($_GET['search']) ? htmlspecialchars($_GET['search']) : '' ?>" 
-                                   style="width: 100%; padding: 10px 10px 10px 35px; border:1px solid #ddd; border-radius:6px;">
-                        </div>
-                        
-                        <!-- Department Filter (Dynamic) -->
-                        <div style="flex: 1; min-width: 150px;">
-                            <select name="department" style="width: 100%; padding: 10px; border:1px solid #ddd; border-radius:6px; background:white;">
-                                <option value="all" <?= (isset($_GET['department']) && $_GET['department'] == 'all') ? 'selected' : '' ?>>All Departments</option>
-                                <?php foreach($departments as $dept): ?>
-                                    <option value="<?= htmlspecialchars($dept) ?>" 
-                                        <?= (isset($_GET['department']) && $_GET['department'] == $dept) ? 'selected' : '' ?>>
-                                        <?= htmlspecialchars($dept) ?>
-                                    </option>
-                                <?php endforeach; ?>
-                            </select>
-                        </div>
+            <!-- Page Header -->
+            <div class="page-header">
+                <div class="page-title">
+                    <h1>Browse Files</h1>
+                    <p>Find and request files from the archive.</p>
+                </div>
+            </div>
 
-                        <!-- Availability Filter (Dynamic) -->
-                        <div style="flex: 1; min-width: 150px;">
-                            <select name="status" style="width: 100%; padding: 10px; border:1px solid #ddd; border-radius:6px; background:white;">
-                                <option value="all" <?= (isset($_GET['status']) && $_GET['status'] == 'all') ? 'selected' : '' ?>>All Status</option>
-                                <?php foreach($statuses as $stat): ?>
-                                    <option value="<?= htmlspecialchars($stat) ?>" 
-                                        <?= (isset($_GET['status']) && $_GET['status'] == $stat) ? 'selected' : '' ?>>
-                                        <?= htmlspecialchars(ucfirst($stat)) ?>
-                                    </option>
-                                <?php endforeach; ?>
-                            </select>
-                        </div>
-
-                        <button type="submit" class="btn">Filter</button>
-                        <a href="browse.php" class="btn btn-secondary" style="text-decoration:none;">Reset</a>
+            <!-- Filter Bar -->
+            <div class="filter-bar-card">
+                <form method="GET" action="browse.php" class="filter-form-inline">
+                    
+                    <div class="search-box-modern">
+                        <span class="icon">🔍</span>
+                        <input type="text" name="search" placeholder="Search Name, Dept, Allocation..." value="<?= isset($_GET['search']) ? htmlspecialchars($_GET['search']) : '' ?>">
                     </div>
+
+                    <div class="filter-item">
+                        <select name="department" class="modern-select">
+                            <option value="all">All Departments</option>
+                            <?php foreach($departments as $dept): ?>
+                                <option value="<?= htmlspecialchars($dept) ?>" 
+                                    <?= (isset($_GET['department']) && $_GET['department'] == $dept) ? 'selected' : '' ?>>
+                                    <?= htmlspecialchars($dept) ?>
+                                </option>
+                            <?php endforeach; ?>
+                        </select>
+                    </div>
+
+                    <button type="submit" class="btn btn-dark">Filter</button>
+                    <a href="browse.php" class="btn btn-secondary">Reset</a>
                 </form>
             </div>
 
-            <!-- FILE LIST -->
-            <div class="card" style="padding: 0; overflow:hidden;">
-                <table style="width:100%; border-collapse: collapse; min-width: 900px;">
-                    <thead>
-                        <tr style="background: #f8f9fa; text-align: left; border-bottom: 2px solid #eee;">
-                            <th style="padding: 15px 20px; font-weight:600; color: #555; width: 30%;">File Name</th>
-                            <th style="padding: 15px 20px; font-weight:600; color: #555; width: 15%;">Department</th>
-                            <th style="padding: 15px 20px; font-weight:600; color: #555; width: 25%;">Location</th>
-                            <th style="padding: 15px 20px; font-weight:600; color: #555; width: 15%;">Status</th>
-                            <th style="padding: 15px 20px; font-weight:600; color: #555; width: 15%; text-align:right;"></th> 
-                        </tr>
-                    </thead>
-                    <tbody>
-                        <?php if($files->rowCount() > 0): ?>
-                            <?php while($row = $files->fetch()): ?>
-                            <tr style="border-bottom:1px solid #eee; transition: background 0.1s;">
-                                <!-- File Name Column -->
-                                <td style="padding: 15px 20px; vertical-align: top;">
-                                    <div style="font-weight:700; font-size:1rem; color:var(--text-dark); margin-bottom:4px;">
-                                        <?= htmlspecialchars($row['file_name']) ?>
-                                    </div>
-                                    <!-- <div style="font-family:monospace; font-size:0.85rem; color:var(--text-light); background:#f4f4f4; display:inline-block; padding:2px 6px; border-radius:4px;">
-                                        <?= htmlspecialchars($row['barcode']) ?>
-                                    </div> -->
-                                    <div style="font-size:0.8rem; color:#888; margin-top:4px;">
-                                        <?= htmlspecialchars($row['category']) ?>
-                                    </div>
-                                </td>
-                                
-                                <!-- Department Column -->
-                                <td style="padding: 15px 20px; vertical-align: top;">
-                                    <span style="font-weight: 600; color: #333;">
-                                        <?= htmlspecialchars($row['department']) ?>
-                                    </span>
-                                </td>
-                                
-                                <!-- Location Column -->
-                                <td style="padding: 15px 20px; vertical-align: top;">
-                                    <?php 
-                                    $hasStructuredLocation = (!empty($row['room']) || !empty($row['rack']) || !empty($row['box']));
-                                    $hasTextLocation = !empty($row['location_text']);
-                                    
-                                    if ($hasStructuredLocation): ?>
-                                        <div style="font-size:0.9rem; color:var(--text-dark); font-weight:500;">
-                                            <span style="color:#888;">Room:</span> <?= htmlspecialchars($row['room']) ?> <br>
-                                            <span style="color:#888;">Rack:</span> <?= htmlspecialchars($row['rack']) ?> / <span style="color:#888;">Box:</span> <?= htmlspecialchars($row['box']) ?>
-                                        </div>
-                                    <?php elseif ($hasTextLocation): ?>
-                                        <div style="font-size:0.9rem; color:var(--text-dark); font-weight:500;">
-                                            <?= htmlspecialchars($row['location_text']) ?>
-                                        </div>
-                                    <?php else: ?>
-                                        <span style="color:#d9534f; font-weight:bold; font-size:0.85rem;">Location Data Missing</span>
-                                    <?php endif; ?>
-                                </td>
-                                
-                                <!-- Status Column -->
-                                <td style="padding: 15px 20px; vertical-align: top;">
-                                    <?php 
-                                    $status = $row['status'];
-                                    $badgeStyle = "";
-                                    switch($status) {
-                                        case 'available':
-                                            $badgeStyle = "background: #e8f5e9; color: #2e7d32;";
-                                            break;
-                                        case 'borrowed':
-                                            $badgeStyle = "background: #fff3e0; color: #ef6c00;";
-                                            break;
-                                        case 'archived':
-                                            $badgeStyle = "background: #eceff1; color: #546e7a;";
-                                            break;
-                                        case 'lost':
-                                            $badgeStyle = "background: #ffebee; color: #c62828;";
-                                            break;
-                                        default:
-                                            $badgeStyle = "background: #eee; color: #333;";
-                                    }
-                                    ?>
-                                    <span class="badge" style="font-size:0.75rem; font-weight:700; padding:4px 8px; border-radius:4px; text-transform:uppercase; letter-spacing:0.5px; <?= $badgeStyle ?>">
-                                        <?= htmlspecialchars($status) ?>
-                                    </span>
-                                </td>
-                                
-                                <!-- Action Column -->
-                                <td style="padding: 15px 20px; vertical-align: top; text-align:right;">
-                                    <?php if($row['status'] == 'available'): ?>
-                                    <form method="POST" action="../actions/request_actions.php" style="display:inline;">
-                                        <input type="hidden" name="action" value="create_request">
-                                        <input type="hidden" name="file_id" value="<?= $row['id'] ?>">
-                                        <button type="submit" class="btn" style="background:var(--primary); color:white; border:none; padding:6px 12px; border-radius:4px; cursor:pointer; font-size:0.85rem;">
-                                            Request File
-                                        </button>
-                                    </form>
-                                    <?php else: ?>
-                                        <span style="color:#aaa; font-size:0.85rem; font-style:italic;">Unavailable</span>
-                                    <?php endif; ?>
-                                </td>
+            <!-- Data Table Card -->
+            <div class="card table-card">
+                <div class="table-responsive">
+                    <table class="modern-table">
+                        <thead>
+                            <tr>
+                                <th>File Details</th>
+                                <th>Allocation</th>
+                                <th>Department</th>
+                                <th>Status</th>
+                                <th style="text-align:right;">Action</th>
                             </tr>
-                            <?php endwhile; ?>
-                        <?php else: ?>
-                        <tr>
-                            <td colspan="5" style="padding:40px; text-align:center; color:#888;">
-                                No files found matching your criteria.
-                            </td>
-                        </tr>
-                        <?php endif; ?>
-                    </tbody>
-                </table>
+                        </thead>
+                        <tbody>
+                            <?php if($files->rowCount() > 0): ?>
+                                <?php while($row = $files->fetch()): ?>
+                                <tr>
+                                    <!-- File Details -->
+                                    <td>
+                                        <div class="cell-main">
+                                            <span class="cell-title"><?= sanitize($row['file_name']) ?></span>
+                                            <span class="cell-sub">Retention: <?= sanitize($row['retention_period']) ?></span>
+                                        </div>
+                                    </td>
 
-                <!-- PAGINATION CONTROLS -->
-                <?php if($total_pages > 1): ?>
-                <div style="padding: 15px 20px; border-top: 1px solid #eee; display:flex; justify-content:space-between; align-items:center;">
-                    <span style="color:#666; font-size:0.9rem;">
-                        Showing <?= ($offset + 1) ?> - <?= min($offset + $limit, $total_rows) ?> of <?= $total_rows ?> files
-                    </span>
-                    <div style="display:flex; gap: 5px;">
+                                    <!-- Allocation -->
+                                    <td>
+                                        <div class="cell-main">
+                                            <span class="cell-text"><?= sanitize($row['allocation']) ?: '-' ?></span>
+                                            <span class="cell-sub">Box: <?= sanitize($row['box_no']) ?> • <?= sanitize($row['month_year']) ?></span>
+                                        </div>
+                                    </td>
+
+                                    <!-- Department -->
+                                    <td>
+                                        <span class="cell-text"><?= sanitize($row['department']) ?></span>
+                                    </td>
+
+                                    <!-- Status -->
+                                    <td>
+                                        <?php 
+                                        $statusConfig = [
+                                            'available' => ['class' => 'status-green', 'icon' => '✅'],
+                                            'borrowed'  => ['class' => 'status-orange', 'icon' => '📤'],
+                                            'archived'  => ['class' => 'status-gray', 'icon' => '🗄️']
+                                        ];
+                                        $stConf = $statusConfig[$row['status']] ?? ['class' => 'status-default', 'icon' => '📄'];
+                                        ?>
+                                        <div class="status-badge <?= $stConf['class'] ?>">
+                                             <?= ucfirst($row['status']) ?>
+                                        </div>
+                                    </td>
+
+                                    <!-- Action -->
+                                    <td class="action-cell">
+                                        <?php if($row['status'] == 'available'): ?>
+                                            <form method="POST" action="../actions/request_actions.php" style="display:inline;">
+                                                <input type="hidden" name="action" value="create_request">
+                                                <input type="hidden" name="file_id" value="<?= $row['id'] ?>">
+                                                <button type="submit" class="btn btn-sm primary">Request</button>
+                                            </form>
+                                        <?php else: ?>
+                                            <span class="disabled-text">Unavailable</span>
+                                        <?php endif; ?>
+                                    </td>
+                                </tr>
+                                <?php endwhile; ?>
+                            <?php else: ?>
+                                <tr>
+                                    <td colspan="5" class="empty-cell">
+                                        <div class="empty-state">
+                                            <h3>No Files Found</h3>
+                                            <p>No available files match your search criteria.</p>
+                                        </div>
+                                    </td>
+                                </tr>
+                            <?php endif; ?>
+                        </tbody>
+                    </table>
+                </div>
+
+                <!-- Pagination Controls -->
+                <?php if ($total_pages > 1): ?>
+                <div class="pagination-bar">
+                    <div class="pagination-info">
+                        Showing <?= min($total_rows, $offset + 1) ?> - <?= min($total_rows, $offset + $limit) ?> of <?= $total_rows ?> files
+                    </div>
+
+                    <div class="pagination-links">
                         <?php 
-                            $query_params = $_GET;
-                            unset($query_params['page']);
-                            $base_url = "?" . http_build_query($query_params);
+                        $query_params = $_GET;
+                        unset($query_params['page']); 
+                        $query_string = http_build_query($query_params);
+                        if(!empty($query_string)) $query_string = '&'.$query_string;
+
+                        $max_buttons = 10;
+                        $start_page = floor(($page - 1) / $max_buttons) * $max_buttons + 1;
+                        $end_page = min($start_page + $max_buttons - 1, $total_pages);
                         ?>
 
                         <?php if($page > 1): ?>
-                            <a href="<?= $base_url ?>&page=1" class="btn btn-secondary" style="padding: 5px 10px; font-size:0.85rem;">First</a>
-                            <a href="<?= $base_url ?>&page=<?= $page - 1 ?>" class="btn btn-secondary" style="padding: 5px 10px; font-size:0.85rem;">Prev</a>
+                            <a href="?page=1<?= $query_string ?>" class="page-btn">«</a>
+                            <a href="?page=<?= $page-1 ?><?= $query_string ?>" class="page-btn">‹</a>
                         <?php endif; ?>
 
-                        <span style="padding: 5px 10px; font-weight:bold; color:var(--primary);">
-                            <?= $page ?> / <?= $total_pages ?>
-                        </span>
+                        <?php for($i = $start_page; $i <= $end_page; $i++): ?>
+                            <?php if($i == $page): ?>
+                                <span class="page-btn active"><?= $i ?></span>
+                            <?php else: ?>
+                                <a href="?page=<?= $i ?><?= $query_string ?>" class="page-btn"><?= $i ?></a>
+                            <?php endif; ?>
+                        <?php endfor; ?>
 
                         <?php if($page < $total_pages): ?>
-                            <a href="<?= $base_url ?>&page=<?= $page + 1 ?>" class="btn btn-secondary" style="padding: 5px 10px; font-size:0.85rem;">Next</a>
-                            <a href="<?= $base_url ?>&page=<?= $total_pages ?>" class="btn btn-secondary" style="padding: 5px 10px; font-size:0.85rem;">Last</a>
+                            <a href="?page=<?= $page+1 ?><?= $query_string ?>" class="page-btn">›</a>
+                            <a href="?page=<?= $total_pages ?><?= $query_string ?>" class="page-btn">»</a>
                         <?php endif; ?>
                     </div>
                 </div>
@@ -307,5 +256,92 @@ foreach ($params as $key => $value) {
         </div>
     </div>
 </div>
+
+<style>
+/* Layout */
+.content-area { padding: 24px; background: #f3f4f6; min-height: calc(100vh - 60px); }
+
+/* Page Header */
+.page-header { margin-bottom: 24px; }
+.page-title h1 { font-size: 1.5rem; color: #111827; margin: 0 0 4px 0; font-weight: 700; }
+.page-title p { margin: 0; color: #6b7280; font-size: 0.9rem; }
+
+/* Cards */
+.card { background: #fff; border-radius: 10px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }
+.table-card { overflow: hidden; }
+
+/* Filter Bar */
+.filter-bar-card { padding: 16px 20px; margin-bottom: 16px; }
+.filter-form-inline { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+
+.search-box-modern { position: relative; flex: 1; min-width: 250px; }
+.search-box-modern .icon { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: #9ca3af; }
+.search-box-modern input { width: 100%; padding: 10px 15px 10px 38px; border: 1px solid #e5e7eb; border-radius: 8px; font-size: 0.9rem; background: #f9fafb; transition: all 0.2s; }
+.search-box-modern input:focus { border-color: #2563eb; background: #fff; box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1); outline: none; }
+
+.modern-select { padding: 10px 12px; border: 1px solid #e5e7eb; border-radius: 8px; background: #f9fafb; font-size: 0.9rem; min-width: 150px; }
+
+/* Table */
+.table-responsive { overflow-x: auto; }
+.modern-table { width: 100%; border-collapse: collapse; min-width: 800px; }
+.modern-table th { text-align: left; padding: 12px 20px; font-size: 0.75rem; text-transform: uppercase; color: #6b7280; background: #f9fafb; border-bottom: 1px solid #e5e7eb; letter-spacing: 0.05em; }
+.modern-table td { padding: 16px 20px; border-bottom: 1px solid #f3f4f6; vertical-align: middle; }
+
+.cell-main { display: flex; flex-direction: column; gap: 2px; }
+.cell-title { font-weight: 600; color: #111827; font-size: 0.95rem; }
+.cell-text { font-weight: 500; color: #374151; font-size: 0.9rem; }
+.cell-sub { font-size: 0.8rem; color: #9ca3af; }
+
+.empty-cell { padding: 40px; text-align: center; }
+.empty-state h3 { margin: 0 0 5px 0; color: #374151; }
+.empty-state p { margin: 0; color: #6b7280; font-size: 0.9rem; }
+
+/* Status Badges */
+.status-badge { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 20px; font-size: 0.75rem; font-weight: 600; }
+.status-green { background: #dcfce7; color: #166534; }
+.status-orange { background: #ffedd5; color: #c2410c; }
+.status-gray { background: #f3f4f6; color: #4b5563; }
+
+/* Action Buttons */
+.action-cell { text-align: right; }
+.btn-sm { padding: 6px 14px; border-radius: 6px; font-size: 0.8rem; font-weight: 600; border: none; cursor: pointer; transition: all 0.2s; }
+.btn-sm.primary { background: #2563eb; color: white; }
+.btn-sm.primary:hover { background: #1d4ed8; }
+.disabled-text { color: #9ca3af; font-size: 0.85rem; font-style: italic; }
+
+/* Buttons */
+.btn { padding: 8px 16px; border-radius: 6px; font-size: 0.85rem; font-weight: 600; border: none; cursor: pointer; transition: all 0.2s; text-decoration: none; display: inline-flex; align-items: center; gap: 6px; }
+.btn-primary { background: #2563eb; color: white; }
+.btn-secondary { background: #f3f4f6; color: #374151; }
+.btn-secondary:hover { background: #e5e7eb; }
+.btn-dark { background: #1f2937; color: white; }
+.btn-dark:hover { background: #111827; }
+
+/* Pagination Styles */
+.pagination-bar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 16px 20px;
+    border-top: 1px solid #e5e7eb;
+    background: #f9fafb;
+    border-bottom-left-radius: 10px;
+    border-bottom-right-radius: 10px;
+}
+.pagination-info { font-size: 0.85rem; color: #6b7280; }
+.pagination-links { display: flex; gap: 4px; }
+.page-btn {
+    padding: 6px 12px;
+    border: 1px solid #d1d5db;
+    background: #fff;
+    color: #374151;
+    text-decoration: none;
+    border-radius: 6px;
+    font-size: 0.85rem;
+    transition: all 0.2s;
+}
+.page-btn:hover { background: #f3f4f6; border-color: #9ca3af; }
+.page-btn.active { background: #2563eb; color: white; border-color: #2563eb; }
+</style>
 
 <?php require_once '../includes/footer.php'; ?>

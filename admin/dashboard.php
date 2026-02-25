@@ -5,7 +5,7 @@ require_once '../config/functions.php';
 
 // --- LOGIC TO HANDLE ROLE SWITCHING ---
 if (isset($_SESSION['active_role']) && $_SESSION['active_role'] === 'operations') {
-    header("Location: ../staff/dashboard.php");
+    header("Location: ../operations/dashboard.php");
     exit();
 }
 
@@ -14,13 +14,14 @@ require_once '../includes/header.php';
 // 1. TOTAL FILES
  $total_files = $pdo->query("SELECT COUNT(*) FROM files")->fetchColumn();
 
-// 2. ACTIVE REQUESTS (Files inside the workflow excluding Completed/Cancelled)
- $active_requests = $pdo->query("SELECT COUNT(*) FROM requests WHERE current_status IN ('Requested', 'Retrieval Assigned', 'File Retrieved', 'Released', 'Return Requested', 'Restoration Assigned')")->fetchColumn();
+// 2. OVERDUE FILES
+// Logic: Status mesti 'Released' DAN due_date sudah luput (kurang dari hari ini)
+ $overdue_files = $pdo->query("SELECT COUNT(*) FROM requests WHERE current_status = 'Released' AND due_date < CURDATE()")->fetchColumn();
 
 // 3. PENDING ADMIN APPROVALS (Items stuck at 'Requested' or 'Return Requested' needing Admin Assignment)
  $pending_approvals = $pdo->query("SELECT COUNT(*) FROM requests WHERE current_status IN ('Requested', 'Return Requested')")->fetchColumn();
 
-// 4. PENDING RETURN (Files currently released to user that need to come back)
+// 4. PENDING RETURN (Files currently released to user)
  $pending_return = $pdo->query("SELECT COUNT(*) FROM requests WHERE current_status = 'Released'")->fetchColumn();
 
 // 5. RECENT REQUESTS (For Dashboard Display)
@@ -54,11 +55,11 @@ require_once '../includes/header.php';
                     <div style="font-size: 0.8rem; color: #888;">Documents in system</div>
                 </div>
                 
-                <!-- Active Workflow -->
-                <div class="stat-card" style="background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); border-left: 4px solid #f59e0b;">
-                    <div style="color: var(--text-light); font-size: 0.9rem; font-weight: 600; text-transform: uppercase;">Active Workflow</div>
-                    <div class="value" style="font-size: 2rem; font-weight: bold; color: var(--text-dark); margin: 5px 0;"><?= number_format($active_requests) ?></div>
-                    <div style="font-size: 0.8rem; color: #888;">Files in circulation</div>
+                <!-- Overdue Files -->
+                <div class="stat-card" style="background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); border-left: 4px solid #dc2626;">
+                    <div style="color: var(--text-light); font-size: 0.9rem; font-weight: 600; text-transform: uppercase;">Overdue Files</div>
+                    <div class="value" style="font-size: 2rem; font-weight: bold; color: var(--text-dark); margin: 5px 0;"><?= number_format($overdue_files) ?></div>
+                    <div style="font-size: 0.8rem; color: #888;">Past due date</div>
                 </div>
 
                 <!-- Pending Approval -->
@@ -130,7 +131,7 @@ require_once '../includes/header.php';
                     </div>
                     
                     <?php 
-                    // ✅ Correct query for file_history
+                    
                     $logs = $pdo->query("
                         SELECT fh.*, u.full_name, f.file_name, f.department
                         FROM file_history fh

@@ -1,87 +1,105 @@
 <?php
-// 1. Initialize Logic & Configuration
 require_once '../config/db.php';
 require_once '../config/functions.php';
 
-// Check Role and Redirect
-if(!isAdmin()) {
+$allowed_roles = ['admin', 'staff', 'operations'];
+if (!isset($_SESSION['role']) || !in_array($_SESSION['role'], $allowed_roles)) {
     redirect('../index.php');
 }
 
-// Set Active Role
-if (!isset($_SESSION['active_role'])) {
-    $_SESSION['active_role'] = 'admin';
+$activeRole = $_SESSION['active_role'] ?? $_SESSION['role'];
+$uid = $_SESSION['user_id'];
+
+$staffList = $pdo->query("
+    SELECT id, full_name 
+    FROM users 
+    WHERE role IN ('operations','admin') 
+    ORDER BY full_name ASC
+")->fetchAll();
+
+$searchTerm = $_GET['search'] ?? '';
+$filterStatuses = $_GET['status_filter'] ?? [];
+
+$whereClauses = [];
+$params = [];
+
+if ($searchTerm) {
+    $whereClauses[] = "(f.file_name LIKE :search 
+                        OR u_req.full_name LIKE :search 
+                        OR f.allocation LIKE :search)";
+    $params[':search'] = "%$searchTerm%";
 }
 
-// 2. Fetch Data
- $activeRole = $_SESSION['active_role'];
- $uid = $_SESSION['user_id'];
+if (!empty($filterStatuses) && is_array($filterStatuses)) {
+    $placeholders = [];
+    foreach ($filterStatuses as $k => $s) {
+        $key = ":sts_$k";
+        $placeholders[] = $key;
+        $params[$key] = $s;
+    }
+    $whereClauses[] = "r.current_status IN (" . implode(',', $placeholders) . ")";
+}
 
-// Fetch Staff and Admins for assignment dropdown
- $sqlStaff = "SELECT id, full_name FROM users WHERE role = 'staff' OR role = 'admin' ORDER BY full_name ASC";
- $staffList = $pdo->query($sqlStaff)->fetchAll();
+$whereSQL = !empty($whereClauses) ? "WHERE " . implode(" AND ", $whereClauses) : "";
 
-// CORRECTED SLA LOGIC:
-// The 20 minute SLA is strictly between:
-// START: 'retrieved_at' (Status: File Retrieved)
-// END:   'released_at'   (Status: Released/Completed)
-//
-// If the file is Retrieved but not yet Released, we calculate duration against NOW().
- $sql = "SELECT r.*, 
-               f.file_name, 
-               f.barcode, 
-               f.department, 
-               f.status as file_status, 
-               u_req.full_name as requester_name, 
-               u_op.full_name as operator_name,
-               
-               -- Timestamps for the 'Retrieved -> Released' SLA Window
-               r.retrieved_at as sla_start_time,
-               r.released_at as sla_end_time,
+$sql = "
+SELECT 
+    r.*,
+    f.file_name,
+    f.allocation,
+    f.box_no,
+    f.department,
+    u_req.full_name AS requester_name,
+    u_op.full_name AS operator_name,
+    r.updated_at AS last_updated_time,
 
-               -- Calculate Duration Minutes for this specific window
-               CASE 
-                   -- If released, calculate difference
-                   WHEN r.retrieved_at IS NOT NULL AND r.released_at IS NOT NULL THEN
-                       TIMESTAMPDIFF(MINUTE, r.retrieved_at, r.released_at)
-                   
-                   -- If retrieved but not released (active SLA window), calculate against NOW()
-                   WHEN r.retrieved_at IS NOT NULL AND r.released_at IS NULL THEN
-                       TIMESTAMPDIFF(MINUTE, r.retrieved_at, NOW())
-                   
-                   ELSE 0
-               END as sla_duration_minutes
-        FROM requests r 
-        JOIN files f ON r.file_id = f.id 
-        JOIN users u_req ON r.user_id = u_req.id
-        LEFT JOIN users u_op ON r.assigned_to = u_op.id
-        ORDER BY 
-            CASE r.current_status 
-                WHEN 'Requested' THEN 1 
-                WHEN 'Retrieval Assigned' THEN 2 
-                WHEN 'File Retrieved' THEN 3
-                WHEN 'Return Requested' THEN 4 
-                WHEN 'Restoration Assigned' THEN 5
-                WHEN 'Cancelled' THEN 99 
-                WHEN 'Completed' THEN 99
-                ELSE 100 
-            END, 
-            r.borrow_date DESC";
-        
- $stmt = $pdo->prepare($sql);
- $stmt->execute();
- $requests = $stmt;
+    CASE 
+        WHEN r.retrieved_at IS NOT NULL AND r.released_at IS NOT NULL 
+            THEN TIMESTAMPDIFF(MINUTE, r.retrieved_at, r.released_at)
+        WHEN r.retrieved_at IS NOT NULL AND r.released_at IS NULL 
+            THEN TIMESTAMPDIFF(MINUTE, r.retrieved_at, NOW())
+        ELSE NULL
+    END AS retrieval_duration,
 
-// Helper function for better time display
+    CASE 
+        WHEN r.released_at IS NOT NULL 
+            THEN DATE_ADD(r.released_at, INTERVAL (3 + (r.extension_count * 3)) DAY)
+        ELSE NULL
+    END AS calculated_due_date
+
+FROM requests r
+JOIN files f ON r.file_id = f.id
+JOIN users u_req ON r.user_id = u_req.id
+LEFT JOIN users u_op ON r.assigned_to = u_op.id
+$whereSQL
+ORDER BY r.updated_at DESC
+";
+
+$stmt = $pdo->prepare($sql);
+$stmt->execute($params);
+
+$statusList = [
+    'Pending HOD Approval',
+    'Approved by HOD',
+    'Retrieval Assigned',
+    'File Retrieved',
+    'Released',
+    'Return Requested',
+    'Restoration Assigned',
+    'File Restored',
+    'Completed',
+    'Cancelled'
+];
+
 function formatDuration($minutes) {
+    if ($minutes === null) return "--";
     if ($minutes < 1) return "0m";
     $h = floor($minutes / 60);
     $m = $minutes % 60;
-    if ($h > 0) return $h . "h " . $m . "m";
-    return $m . " mins";
+    return ($h > 0 ? $h . "h " : "") . $m . "m";
 }
 
-require_once '../includes/header.php'; 
+require_once '../includes/header.php';
 ?>
 
 <div class="layout-wrapper">
@@ -89,257 +107,313 @@ require_once '../includes/header.php';
     <div class="main-content">
         <div class="content-area">
             
-            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px;">
+            <div class="page-header">
                 <div>
-                    <h1>Document Workflow Management</h1>
-                    <p style="color:var(--text-light);">Control Request Approval, Task Assignment, and File Restoration.</p>
+                    <h1>Document Workflow</h1>
+                    <p>Manage file requests, retrieval, and restoration tasks.</p>
                 </div>
-                
-                <div style="display:flex; gap:10px;">
-                    <div style="display:flex; gap:10px;">
-                        <input type="text" id="tableSearch" placeholder="Search..." 
-                               style="padding: 6px 12px; border: 1px solid #d1d5db; border-radius: 4px;">
-                        <select id="statusFilter" style="padding: 6px 12px; border: 1px solid #d1d5db; border-radius: 4px;">
-                            <option value="all">All Statuses</option>
-                            <option value="Requested">Requested</option>
-                            <option value="Retrieval Assigned">Retrieval Assigned</option>
-                            <option value="File Retrieved">File Retrieved</option>
-                            <option value="Return Requested">Return Requested</option>
-                            <option value="Completed">Completed</option>
-                            <option value="Cancelled">Cancelled</option>
-                        </select>
+            </div>
+
+            <!-- Filters Card -->
+            <div class="card filter-card">
+                <form method="GET" class="filter-form">
+                    <div class="search-box">
+                        <span class="search-icon">🔍</span>
+                        <input type="text" name="search" placeholder="Search file, name, or allocation..." value="<?= htmlspecialchars($searchTerm) ?>">
                     </div>
+                    
+                    <div class="dropdown-filter">
+                        <button type="button" class="dropdown-btn" onclick="toggleDropdown()">
+                            <span>Filter Status</span>
+                            <?php if(count($filterStatuses) > 0): ?>
+                                <span class="badge-count"><?= count($filterStatuses) ?></span>
+                            <?php endif; ?>
+                            <span class="arrow">▼</span>
+                        </button>
+                        <div id="statusDropdown" class="dropdown-content">
+                            <?php foreach($statusList as $s): ?>
+                            <label class="checkbox-label">
+                                <input type="checkbox" name="status_filter[]" value="<?= $s ?>" <?= in_array($s, $filterStatuses) ? 'checked' : '' ?> onchange="this.form.submit()"> 
+                                <span><?= $s ?></span>
+                            </label>
+                            <?php endforeach; ?>
+                            <div class="dropdown-actions">
+                                <button type="submit" class="btn-apply">Apply Filters</button>
+                                <a href="?" class="btn-reset">Reset</a>
+                            </div>
+                        </div>
+                    </div>
+                </form>
+            </div>
+
+            <!-- Data Table Card -->
+            <div class="card table-card">
+                <div class="table-responsive">
+                    <table class="workflow-table">
+                        <thead>
+                            <tr>
+                                <th>File Details</th>
+                                <th>Status</th>
+                                <th>Last Updated</th>
+                                <th>Timeline & SLA</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <?php while($row = $stmt->fetch()): 
+                                $displayStatus = $row['current_status'];
+                                
+                                $statusStyles = [
+                                    'Pending HOD Approval' => ['bg'=>'#fff7ed', 'color'=>'#c2410c', 'icon'=>'⏳'],
+                                    'Approved by HOD'      => ['bg'=>'#ecfccb', 'color'=>'#3f6212', 'icon'=>'✅'],
+                                    'Retrieval Assigned'   => ['bg'=>'#fef3c7', 'color'=>'#92400e', 'icon'=>'📅'],
+                                    'File Retrieved'       => ['bg'=>'#e0f2fe', 'color'=>'#0369a1', 'icon'=>'📂'],
+                                    'Released'             => ['bg'=>'#dcfce7', 'color'=>'#15803d', 'icon'=>'📤'],
+                                    'Return Requested'     => ['bg'=>'#ffedd5', 'color'=>'#9a3412', 'icon'=>'↩️'],
+                                    'Restoration Assigned' => ['bg'=>'#f3e8ff', 'color'=>'#7e22ce', 'icon'=>'🔧'],
+                                    'File Restored'        => ['bg'=>'#e0e7ff', 'color'=>'#3730a3', 'icon'=>'✔️'],
+                                    'Completed'            => ['bg'=>'#f1f5f9', 'color'=>'#475569', 'icon'=>'🏁'],
+                                    'Cancelled'            => ['bg'=>'#fee2e2', 'color'=>'#b91c1c', 'icon'=>'🚫'],
+                                ];
+                                $style = $statusStyles[$displayStatus] ?? ['bg'=>'#f3f4f6', 'color'=>'#374151', 'icon'=>'❓'];
+
+                                $mins = $row['retrieval_duration'];
+                                $dueDate = $row['calculated_due_date'];
+                                $isOverdue = ($dueDate && strtotime(date('Y-m-d')) > strtotime($dueDate) && $displayStatus == 'Released');
+                                
+                                $slaColor = '#10b981'; 
+                                if ($mins > 20) $slaColor = '#ef4444'; 
+                                elseif ($mins > 15) $slaColor = '#f59e0b'; 
+
+                                $lastUpdate = $row['last_updated_time'];
+                            ?>
+                            <tr>
+                                <td>
+                                    <div class="file-info">
+                                        <span class="file-name"><?= sanitize($row['file_name']) ?></span>
+                                        <span class="file-meta">
+                                            Alloc: <?= sanitize($row['allocation']) ?> • 
+                                            Box: <?= sanitize($row['box_no']) ?> • 
+                                            Req by: <?= sanitize($row['requester_name']) ?>
+                                        </span>
+                                    </div>
+                                </td>
+
+                                <td>
+                                    <div class="status-badge" style="background:<?= $style['bg'] ?>; color:<?= $style['color'] ?>;">
+                                        <span class="icon"><?= $style['icon'] ?></span>
+                                        <?= $displayStatus ?>
+                                    </div>
+                                    <?php if($row['extension_count'] > 0): ?>
+                                        <div class="ext-badge">Extension x<?= $row['extension_count'] ?></div>
+                                    <?php endif; ?>
+                                </td>
+
+                                <td class="timestamp-col">
+                                    <?php if($row['hod_timestamp']): ?>
+                                        <!-- Show HOD timestamp if available -->
+                                        <div class="time-display"><?= date('d M Y', strtotime($row['hod_timestamp'])) ?></div>
+                                        <div class="time-small"><?= date('H:i', strtotime($row['hod_timestamp'])) ?></div>
+                                    <?php elseif($row['last_updated_time']): ?>
+                                        <!-- Fallback -->
+                                        <div class="time-display"><?= date('d M Y', strtotime($row['last_updated_time'])) ?></div>
+                                        <div class="time-small"><?= date('H:i', strtotime($row['last_updated_time'])) ?></div>
+                                    <?php else: ?>
+                                        <span class="text-muted">--</span>
+                                    <?php endif; ?>
+                                </td>
+
+                                <td>
+                                    <?php if($displayStatus == 'Released' && $dueDate): ?>
+                                        <div class="timeline-box">
+                                            <div class="due-row">
+                                                <span>Due Date:</span>
+                                                <strong style="color: <?= $isOverdue ? '#dc2626' : '#059669' ?>">
+                                                    <?= date('d M', strtotime($dueDate)) ?>
+                                                </strong>
+                                            </div>
+                                            <?php if($isOverdue): ?>
+                                                <div class="overdue-alert">⚠ Overdue</div>
+                                            <?php endif; ?>
+                                        </div>
+                                    
+                                    <?php elseif(in_array($displayStatus, ['Retrieval Assigned', 'File Retrieved']) && $mins !== null): ?>
+                                        <div class="timeline-box sla-box">
+                                            <div class="sla-label">Process Time</div>
+                                            <div class="sla-time" style="color:<?= $slaColor ?>">
+                                                <strong><?= formatDuration($mins) ?></strong>
+                                            </div>
+                                            <div class="sla-limit">(Limit: 20m)</div>
+                                        </div>
+                                    <?php else: ?>
+                                        <span class="text-muted">--</span>
+                                    <?php endif; ?>
+                                </td>
+
+                                <td class="action-col">
+                                    <?php 
+                                    // ACTION LOGIC (Same as before, unchanged logic just cleaner look)
+                                    if($displayStatus == 'Pending HOD Approval'): ?>
+                                        <span class="info-text waiting">Waiting for HOD</span>
+
+                                    <?php elseif($displayStatus == 'Approved by HOD' && $activeRole == 'admin'): ?>
+                                        <form method="POST" action="../actions/request_actions.php" class="inline-form">
+                                            <input type="hidden" name="action" value="assign_retrieval">
+                                            <input type="hidden" name="request_id" value="<?= $row['id'] ?>">
+                                            <select name="assigned_staff_id" required class="mini-select">
+                                                <?php foreach($staffList as $s): ?>
+                                                    <option value="<?= $s['id'] ?>"><?= sanitize($s['full_name']) ?></option>
+                                                <?php endforeach; ?>
+                                            </select>
+                                            <button type="submit" class="btn btn-primary btn-sm">Assign</button>
+                                        </form>
+
+                                    <?php elseif($displayStatus == 'Retrieval Assigned' && in_array($activeRole, ['staff', 'operations'])): ?>
+                                        <form method="POST" action="../actions/request_actions.php" class="inline-form">
+                                            <input type="hidden" name="action" value="confirm_retrieval">
+                                            <input type="hidden" name="request_id" value="<?= $row['id'] ?>">
+                                            <button type="submit" class="btn btn-warning btn-sm">✅ Retrieved</button>
+                                        </form>
+
+                                    <?php elseif($displayStatus == 'File Retrieved' && $activeRole == 'admin'): ?>
+                                        <form method="POST" action="../actions/request_actions.php" class="inline-form">
+                                            <input type="hidden" name="action" value="release_file">
+                                            <input type="hidden" name="request_id" value="<?= $row['id'] ?>">
+                                            <button type="submit" class="btn btn-success btn-sm">Release File</button>
+                                        </form>
+
+                                    <?php elseif($displayStatus == 'Return Requested' && $activeRole == 'admin'): ?>
+                                        <form method="POST" action="../actions/request_actions.php" class="inline-form">
+                                            <input type="hidden" name="action" value="assign_restoration">
+                                            <input type="hidden" name="request_id" value="<?= $row['id'] ?>">
+                                            <select name="assigned_staff_id" required class="mini-select">
+                                                <?php foreach($staffList as $s): ?>
+                                                    <option value="<?= $s['id'] ?>"><?= sanitize($s['full_name']) ?></option>
+                                                <?php endforeach; ?>
+                                            </select>
+                                            <button type="submit" class="btn btn-primary btn-sm">Assign</button>
+                                        </form>
+
+                                    <?php elseif($displayStatus == 'Restoration Assigned' && in_array($activeRole, ['staff', 'operations'])): ?>
+                                        <form method="POST" action="../actions/request_actions.php" class="inline-form">
+                                            <input type="hidden" name="action" value="confirm_restoration">
+                                            <input type="hidden" name="request_id" value="<?= $row['id'] ?>">
+                                            <button type="submit" class="btn btn-warning btn-sm">✅ Restored</button>
+                                        </form>
+
+                                    <?php elseif($displayStatus == 'File Restored' && $activeRole == 'admin'): ?>
+                                        <form method="POST" action="../actions/request_actions.php" class="inline-form">
+                                            <input type="hidden" name="action" value="complete_transaction">
+                                            <input type="hidden" name="request_id" value="<?= $row['id'] ?>">
+                                            <button type="submit" class="btn btn-dark btn-sm">Complete</button>
+                                        </form>
+                                    
+                                    <?php elseif(in_array($displayStatus, ['Completed', 'Cancelled'])): ?>
+                                        <span class="text-muted">No Action</span>
+                                    
+                                    <?php else: ?>
+                                        <span class="text-muted">Processing...</span>
+                                    <?php endif; ?>
+                                </td>
+                            </tr>
+                            <?php endwhile; ?>
+                        </tbody>
+                    </table>
                 </div>
             </div>
 
-            <div class="card">
-                <table style="width:100%; border-collapse: collapse;">
-                    <thead>
-                        <tr style="background: #f8f9fa; text-align:left;">
-                            <th style="padding:12px;">File Details</th>
-                            <th style="padding:12px;">Workflow Status</th>
-                            <th style="padding:12px;">Timeline (Retrieved -> Released)</th>
-                            <th style="padding:12px;">Duration</th>
-                            <th style="padding:12px;">Actions</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        <?php while($row = $requests->fetch()): 
-                            // Determine Badge Color for Status
-                            $displayStatus = $row['current_status'];
-                            $badgeBg = '#e3f2fd';
-                            $badgeColor = '#0d47a1';
-
-                            if ($displayStatus == 'Cancelled' || empty($displayStatus)) {
-                                $displayStatus = 'Cancelled';
-                                $badgeBg = '#fee2e2';
-                                $badgeColor = '#b91c1c';
-                            } elseif ($displayStatus == 'Completed') {
-                                $badgeBg = '#d1fae5';
-                                $badgeColor = '#065f46';
-                            } elseif (in_array($displayStatus, ['Released', 'File Restored'])) {
-                                $badgeBg = '#e0e7ff';
-                                $badgeColor = '#3730a3';
-                            } elseif ($displayStatus == 'Return Requested') {
-                                $badgeBg = '#ffedd5';
-                                $badgeColor = '#9a3412';
-                            } elseif ($displayStatus == 'Retrieval Assigned') {
-                                $badgeBg = '#fef3c7'; 
-                                $badgeColor = '#92400e';
-                            } elseif ($displayStatus == 'File Retrieved') {
-                                // Highlight this status as it starts the SLA timer
-                                $badgeBg = '#e0f2fe'; 
-                                $badgeColor = '#0369a1';
-                            }
-                        ?>
-                        <tr style="border-bottom:1px solid #eee;">
-                            <td style="padding:12px; vertical-align:top;">
-                                <strong style="display:block; margin-bottom:4px;"><?= sanitize($row['file_name']) ?></strong>
-                                <span style="font-size:0.85rem; color:#666;">
-                                    Req: <?= sanitize($row['requester_name']) ?><br>
-                                    Dept: <?= sanitize($row['department']) ?><br>
-                                    <!-- <small style="color:#999;">Barcode: <?= sanitize($row['barcode']) ?></small> -->
-                                </span>
-                            </td>
-                            <td style="padding:12px; vertical-align:top;">
-                                <span class="badge" style="background:<?= $badgeBg ?>; color:<?= $badgeColor ?>; padding:4px 8px; border-radius:4px; font-weight:bold; display:inline-block; margin-bottom:4px;">
-                                    <?= $displayStatus ?>
-                                </span>
-                                <?php if($row['operator_name']): ?>
-                                    <div style="font-size:0.8rem; color:#666; margin-top:4px;">Staff: <?= sanitize($row['operator_name']) ?></div>
-                                <?php endif; ?>
-                            </td>
-                            
-                            <!-- NEW: Specific SLA Timeline Display -->
-                            <td style="padding:12px; font-size:0.85rem; vertical-align:top; min-width: 160px;">
-                                <div style="display:flex; flex-direction:column; gap:8px;">
-                                    <!-- Start Time (Retrieved) -->
-                                    <div>
-                                        <span style="color:#666; font-size:0.75rem; text-transform:uppercase; font-weight:bold;">Retrieved (Start)</span><br>
-                                        <?php if($row['sla_start_time']): ?>
-                                            <span style="font-family:monospace; font-size:0.9rem; color:#333;">
-                                                <?= date('M j, H:i:s', strtotime($row['sla_start_time'])) ?>
-                                            </span>
-                                        <?php else: ?>
-                                            <span style="color:#999;">--</span>
-                                        <?php endif; ?>
-                                    </div>
-
-                                    <!-- End Time (Released) -->
-                                    <div>
-                                        <span style="color:#666; font-size:0.75rem; text-transform:uppercase; font-weight:bold;">Released (End)</span><br>
-                                        <?php if($row['sla_end_time']): ?>
-                                            <span style="font-family:monospace; font-size:0.9rem; color:#059669; font-weight:bold;">
-                                                <?= date('M j, H:i:s', strtotime($row['sla_end_time'])) ?>
-                                            </span>
-                                        <?php else: ?>
-                                            <span style="color:#999; font-style:italic;">Pending...</span>
-                                        <?php endif; ?>
-                                    </div>
-                                </div>
-                            </td>
-                            
-                            <td style="padding:12px; font-size:0.9rem; vertical-align:top; min-width: 100px;">
-                                <?php 
-                                    $mins = isset($row['sla_duration_minutes']) ? intval($row['sla_duration_minutes']) : 0;
-                                    
-                                    // SLA Logic: 20 Minutes
-                                    $slaBg = '#d1fae5'; // Green
-                                    $slaText = '#065f46';
-                                    
-                                    if ($mins > 20) {
-                                        $slaBg = '#fee2e2'; // Red
-                                        $slaText = '#b91c1c';
-                                    } elseif ($mins > 15 && $mins <= 20) {
-                                        $slaBg = '#ffedd5'; // Orange
-                                        $slaText = '#9a3412';
-                                    }
-
-                                    // Only show duration if the SLA window has started (Retrieved)
-                                    if ($row['sla_start_time']) {
-                                ?>
-                                   <div style="background:<?= $slaBg ?>; color:<?= $slaText ?>; 
-                                            padding:4px 6px; 
-                                            border-radius:4px; 
-                                            text-align:center; 
-                                            font-weight:bold; 
-                                            font-size:0.85rem; 
-                                            display:inline-block; 
-                                            min-width:60px; 
-                                            box-shadow: 0 1px 2px rgba(0,0,0,0.1);">
-                                    <?= formatDuration($mins) ?>
-                                </div>
-                            
-                                <?php } else { 
-                                    // Not yet retrieved, so SLA clock hasn't started
-                                    echo '<span style="color:#999; font-style:italic;">Not Started</span>'; 
-                                } ?>
-                            </td>
-                            
-                            <td style="padding:12px; vertical-align:top;">
-                                <!-- ACTION BUTTONS -->
-                                
-                                <?php if($row['current_status'] == 'Requested' && $activeRole == 'admin'): ?>
-                                    <form method="POST" action="../actions/request_actions.php" style="display:inline;">
-                                        <input type="hidden" name="action" value="assign_retrieval">
-                                        <input type="hidden" name="request_id" value="<?= $row['id'] ?>">
-                                        <select name="assigned_staff_id" required style="padding:5px; margin-right:5px;">
-                                            <option value="">Assign To...</option>
-                                            <?php foreach($staffList as $s): ?>
-                                                <option value="<?= $s['id'] ?>" <?= $s['id'] == $uid ? 'selected' : '' ?>>
-                                                    <?= sanitize($s['full_name']) ?>
-                                                </option>
-                                            <?php endforeach; ?>
-                                        </select>
-                                        <button type="submit" class="btn" style="padding:5px 10px; font-size:0.8rem;">Assign</button>
-                                    </form>
-
-                                <?php elseif($row['current_status'] == 'Retrieval Assigned' && $activeRole == 'operations'): ?>
-                                    <form method="POST" action="../actions/request_actions.php" style="display:inline;">
-                                        <input type="hidden" name="action" value="confirm_retrieval">
-                                        <input type="hidden" name="request_id" value="<?= $row['id'] ?>">
-                                        <button type="submit" class="btn" style="background:orange; color:white; padding:6px 12px; border-radius:4px; border:none;">Confirm Retrieved</button>
-                                    </form>
-
-                                <?php elseif($row['current_status'] == 'File Retrieved' && $activeRole == 'admin'): ?>
-                                    <form method="POST" action="../actions/request_actions.php" style="display:inline;">
-                                        <input type="hidden" name="action" value="release_file">
-                                        <input type="hidden" name="request_id" value="<?= $row['id'] ?>">
-                                        <button type="submit" class="btn" style="background:green; color:white; padding:6px 12px; border-radius:4px; border:none;">Release to Requestor</button>
-                                    </form>
-
-                                <?php elseif($row['current_status'] == 'Return Requested' && $activeRole == 'admin'): ?>
-                                    <form method="POST" action="../actions/request_actions.php" style="display:inline;">
-                                        <input type="hidden" name="action" value="assign_restoration">
-                                        <input type="hidden" name="request_id" value="<?= $row['id'] ?>">
-                                        <select name="assigned_staff_id" required style="padding:5px; margin-right:5px;">
-                                            <option value="">Assign To...</option>
-                                            <?php foreach($staffList as $s): ?>
-                                                <option value="<?= $s['id'] ?>" <?= $s['id'] == $uid ? 'selected' : '' ?>>
-                                                    <?= sanitize($s['full_name']) ?>
-                                                </option>
-                                            <?php endforeach; ?>
-                                        </select>
-                                        <button type="submit" class="btn" style="padding:5px 10px; font-size:0.8rem;">Assign Restore</button>
-                                    </form>
-
-                                <?php elseif($row['current_status'] == 'Restoration Assigned' && $activeRole == 'operations'): ?>
-                                    <form method="POST" action="../actions/request_actions.php" style="display:inline;">
-                                        <input type="hidden" name="action" value="confirm_restoration">
-                                        <input type="hidden" name="request_id" value="<?= $row['id'] ?>">
-                                        <button type="submit" class="btn" style="background:green; color:white; padding:6px 12px; border-radius:4px; border:none;">Confirm Restored</button>
-                                    </form>
-
-                                <?php elseif($row['current_status'] == 'File Restored' && $activeRole == 'admin'): ?>
-                                    <form method="POST" action="../actions/request_actions.php" style="display:inline;">
-                                        <input type="hidden" name="action" value="complete_transaction">
-                                        <input type="hidden" name="request_id" value="<?= $row['id'] ?>">
-                                        <input type="text" name="remarks" placeholder="Remarks (Optional)" style="padding:5px; margin-right:5px; width:120px;">
-                                        <button type="submit" class="btn" style="padding:5px 10px; font-size:0.8rem;">Complete</button>
-                                    </form>
-
-                                <?php elseif($row['current_status'] == 'Cancelled' || empty($row['current_status'])): ?>
-                                    <span style="color:#dc2626; font-weight:bold; display:block;">Request Cancelled</span>
-                                    
-                                <?php elseif($row['current_status'] == 'Completed'): ?>
-                                    <span style="color:#059669; font-weight:bold;">Completed</span>
-                                    <?php if(!empty($row['remarks'])): ?>
-                                        <div style="font-size:0.75rem; color:#666; margin-top:4px;">Note: <?= sanitize($row['remarks']) ?></div>
-                                    <?php endif; ?>
-
-                                <?php else: ?>
-                                    <span style="color:#999; font-style:italic;">Waiting...</span>
-                                <?php endif; ?>
-                            </td>
-                        </tr>
-                        <?php endwhile; ?>
-                    </tbody>
-                </table>
-            </div>
         </div>
     </div>
 </div>
 
+<style>
+/* --- Modern UI Styles --- */
+
+/* Layout */
+.content-area { padding: 25px; background: #f4f6f9; min-height: 100vh; }
+.page-header { margin-bottom: 25px; }
+.page-header h1 { font-size: 1.5rem; color: #111827; margin: 0 0 5px 0; }
+.page-header p { font-size: 0.9rem; color: #6b7280; margin: 0; }
+
+/* Cards */
+.card { background: #fff; border-radius: 10px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); margin-bottom: 20px; }
+.filter-card { padding: 15px 20px; }
+
+/* Filters */
+.filter-form { display: flex; gap: 15px; align-items: center; flex-wrap: wrap; }
+.search-box { position: relative; flex: 1; min-width: 250px; }
+.search-box input { width: 100%; padding: 10px 15px 10px 40px; border: 1px solid #e5e7eb; border-radius: 8px; font-size: 0.9rem; }
+.search-box .search-icon { position: absolute; left: 15px; top: 50%; transform: translateY(-50%); opacity: 0.5; }
+
+.dropdown-filter { position: relative; }
+.dropdown-btn { display: flex; align-items: center; gap: 8px; padding: 10px 15px; background: #fff; border: 1px solid #e5e7eb; border-radius: 8px; cursor: pointer; font-weight: 500; color: #374151; }
+.dropdown-btn .badge-count { background: #3b82f6; color: white; border-radius: 50%; width: 20px; height: 20px; font-size: 0.7rem; display: flex; align-items: center; justify-content: center; }
+.dropdown-content { display: none; position: absolute; top: 110%; right: 0; width: 250px; background: white; border-radius: 8px; box-shadow: 0 10px 25px rgba(0,0,0,0.1); z-index: 100; padding: 15px; border: 1px solid #e5e7eb; }
+.show-dropdown { display: block !important; }
+.checkbox-label { display: flex; align-items: center; gap: 10px; padding: 8px 0; cursor: pointer; font-size: 0.9rem; color: #374151; }
+.checkbox-label input { width: 16px; height: 16px; }
+.dropdown-actions { margin-top: 10px; border-top: 1px solid #eee; padding-top: 10px; display: flex; gap: 10px; }
+.btn-apply { flex: 1; padding: 8px; background: #111827; color: white; border: none; border-radius: 5px; cursor: pointer; }
+.btn-reset { flex: 1; text-align: center; padding: 8px; background: #f3f4f6; color: #374151; border-radius: 5px; text-decoration: none; font-size: 0.85rem; }
+
+/* Table */
+.table-responsive { overflow-x: auto; }
+.workflow-table { width: 100%; border-collapse: collapse; min-width: 800px; }
+.workflow-table th { text-align: left; padding: 15px 20px; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; color: #6b7280; border-bottom: 1px solid #e5e7eb; background: #f9fafb; }
+.workflow-table td { padding: 15px 20px; border-bottom: 1px solid #f3f4f6; vertical-align: middle; }
+
+.file-info { display: flex; flex-direction: column; }
+.file-name { font-weight: 600; color: #111827; margin-bottom: 2px; }
+.file-meta { font-size: 0.8rem; color: #6b7280; }
+
+/* Status Badges */
+.status-badge { display: inline-flex; align-items: center; gap: 6px; padding: 5px 10px; border-radius: 6px; font-size: 0.8rem; font-weight: 600; }
+.status-badge .icon { font-size: 0.9rem; }
+.ext-badge { font-size: 0.7rem; color: #6b7280; margin-top: 4px; }
+
+/* Timestamps */
+.timestamp-col .time-display { font-weight: 500; color: #374151; font-size: 0.9rem; }
+.timestamp-col .time-small { font-size: 0.8rem; color: #9ca3af; }
+.text-muted { color: #9ca3af; font-size: 0.85rem; font-style: italic; }
+
+/* Timeline & SLA */
+.timeline-box { background: #f9fafb; padding: 8px 10px; border-radius: 6px; border: 1px solid #e5e7eb; }
+.due-row { display: flex; justify-content: space-between; font-size: 0.85rem; color: #374151; }
+.overdue-alert { color: #dc2626; font-size: 0.75rem; font-weight: 600; margin-top: 4px; }
+
+.sla-box { text-align: center; }
+.sla-label { font-size: 0.7rem; color: #6b7280; text-transform: uppercase; }
+.sla-time { font-size: 1.1rem; }
+.sla-limit { font-size: 0.7rem; color: #9ca3af; }
+
+/* Actions */
+.action-col { min-width: 200px; }
+.inline-form { display: flex; gap: 8px; align-items: center; }
+.mini-select { padding: 6px 10px; border-radius: 6px; border: 1px solid #d1d5db; font-size: 0.85rem; background: #fff; cursor: pointer; }
+
+/* Buttons */
+.btn { border: none; cursor: pointer; font-weight: 500; border-radius: 6px; transition: all 0.2s; }
+.btn-sm { padding: 6px 12px; font-size: 0.8rem; }
+.btn-primary { background: #2563eb; color: white; }
+.btn-success { background: #16a34a; color: white; }
+.btn-warning { background: #d97706; color: white; }
+.btn-dark { background: #111827; color: white; }
+.btn:hover { opacity: 0.9; transform: translateY(-1px); }
+
+.info-text { font-style: italic; font-size: 0.85rem; padding: 5px 10px; background: #f3f4f6; border-radius: 4px; display: inline-block; }
+.info-text.waiting { color: #d97706; background: #fff7ed; }
+
+</style>
 <script>
-// Simple Filter Logic
-document.getElementById('tableSearch').addEventListener('keyup', function() {
-    let filter = this.value.toLowerCase();
-    let statusFilter = document.getElementById('statusFilter').value;
-    let rows = document.querySelectorAll('tbody tr');
-    rows.forEach(row => {
-        let text = row.textContent.toLowerCase();
-        // Check status column specifically (index 1)
-        let statusCell = row.cells[1].innerText.trim();
-        
-        let matchesSearch = text.includes(filter);
-        let matchesStatus = (statusFilter === 'all') || (statusCell === statusFilter);
-
-        row.style.display = (matchesSearch && matchesStatus) ? '' : 'none';
-    });
-});
-document.getElementById('statusFilter').addEventListener('change', function() {
-    document.getElementById('tableSearch').dispatchEvent(new Event('keyup'));
-});
+    function toggleDropdown() { document.getElementById("statusDropdown").classList.toggle("show-dropdown"); }
+    window.onclick = function(event) {
+        if (!event.target.matches('.dropdown-btn') && !event.target.closest('.dropdown-btn')) {
+            var dropdowns = document.getElementsByClassName("dropdown-content");
+            for (var i = 0; i < dropdowns.length; i++) {
+                var openDropdown = dropdowns[i];
+                if (openDropdown.classList.contains('show-dropdown')) { openDropdown.classList.remove('show-dropdown'); }
+            }
+        }
+    }
 </script>
-
 <?php require_once '../includes/footer.php'; ?>

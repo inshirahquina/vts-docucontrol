@@ -2,40 +2,107 @@
 require_once '../config/db.php';
 require_once '../config/functions.php';
 
- $error = '';
-if ($_SERVER['REQUEST_METHOD'] == 'POST') {
-    $username = trim($_POST['username']);
-    $password = $_POST['password'];
-
-    $stmt = $pdo->prepare("SELECT * FROM users WHERE username = ?");
-    $stmt->execute([$username]);
-    $user = $stmt->fetch();
-
-    if ($user && password_verify($password, $user['password'])) {
-        // Regenerate session ID for security
-        session_regenerate_id();
-        
-        $_SESSION['user_id'] = $user['id'];
-        $_SESSION['username'] = $user['username'];
-        $_SESSION['full_name'] = $user['full_name'];
-        $_SESSION['role'] = $user['role'];
-        
-        // Audit Log
-        $log = $pdo->prepare("INSERT INTO audit_logs (user_id, action) VALUES (?, 'User Logged In')");
-        $log->execute([$user['id']]);
-
-        // Redirect based on role
-        if ($user['role'] == 'admin') {
-            header("Location: ../admin/dashboard.php");
-        } else {
-            header("Location: ../staff/dashboard.php");
-        }
-        exit;
-    } else {
-        // Redirect back with error or handle error here
-        // For simplicity, we redirect back to index with a query param
-        header("Location: ../index.php?error=invalid");
-        exit;
-    }
+if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+    redirect('../index.php');
+    exit;
 }
+
+$username = trim($_POST['username'] ?? '');
+$password = $_POST['password'] ?? '';
+
+// --- GET USER ---
+$stmt = $pdo->prepare("SELECT * FROM users WHERE username = ?");
+$stmt->execute([$username]);
+$user = $stmt->fetch();
+
+// --- VERIFY LOGIN ---
+if (!$user || !password_verify($password, $user['password'])) {
+    redirect('../index.php?error=invalid');
+    exit;
+}
+
+// --- SECURITY ---
+session_regenerate_id(true);
+
+// --- SESSION SETUP ---
+$_SESSION['user_id']   = $user['id'];
+$_SESSION['username']  = $user['username'];
+$_SESSION['full_name'] = $user['full_name'];
+$_SESSION['role']      = $user['role'];
+
+
+// =================================================
+// ACTIVE ROLE LOGIC (AS ORIGINAL)
+// =================================================
+$dbRole   = $user['role'];
+$dbActive = $user['active_role'];
+
+switch ($dbRole) {
+
+    case 'hod':
+        $_SESSION['active_role'] = $dbActive ?: 'hod';
+        break;
+
+    case 'staff':
+        $_SESSION['active_role'] = $dbActive ?: 'staff';
+        break;
+
+    case 'admin':
+        $_SESSION['active_role'] = $dbActive ?: 'admin';
+        break;
+
+    default: // requestor
+        $_SESSION['active_role'] = 'requestor';
+        break;
+}
+
+
+// --- OPTIONAL: AUTO UPDATE active_role IF EMPTY ---
+if (!$dbActive) {
+    $update = $pdo->prepare("UPDATE users SET active_role = ? WHERE id = ?");
+    $_updateRole = $_SESSION['active_role'];
+    $update->execute([$_updateRole, $user['id']]);
+}
+
+
+// =================================================
+// LOG LOGIN
+// =================================================
+$log = $pdo->prepare("
+    INSERT INTO audit_logs (user_id, action, timestamp, details)
+    VALUES (?, 'User Logged In', NOW(), ?)
+");
+
+$log->execute([
+    $user['id'],
+    json_encode([
+        'base_role'   => $dbRole,
+        'active_role' => $_SESSION['active_role']
+    ])
+]);
+
+
+// =================================================
+// REDIRECT BASED ON ACTIVE ROLE
+// =================================================
+switch ($_SESSION['active_role']) {
+
+    case 'hod':
+        redirect('../hod/dashboard.php');
+        break;
+
+    case 'operations':
+        redirect('../operations/dashboard.php');
+        break;
+
+    case 'admin':
+        redirect('../admin/dashboard.php');
+        break;
+
+    default:
+        redirect('../requestor/dashboard.php');
+        break;
+}
+
+exit;
 ?>

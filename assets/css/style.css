@@ -15,73 +15,48 @@
 /* Reset & Base */
 * { box-sizing: border-box; margin: 0; padding: 0; }
 body {
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-    background-color: var(--bg-body);
-    color: var(--text-main);
-    height: 100vh;
-    overflow: hidden; /* Prevents double scrollbars on the window */
-    
-    /* REMOVED 'display: flex' HERE */
+    margin: 0;
+    font-family: Arial, sans-serif;
+    background: #f8fafc;
 }
 
-/* --- Layout Wrapper --- */
-/* This is the container that arranges Sidebar & Content side-by-side */
 .layout-wrapper {
     display: flex;
-    width: 100%;
-    height: 100%; /* Fill the full body height */
-    overflow: hidden; /* Prevents wrapper from expanding beyond screen */
+    min-height: 100vh;
 }
 
-/* --- Sidebar --- */
 .sidebar {
-    width: 260px;
-    background-color: var(--sidebar-bg);
-    color: white;
-    display: flex;
-    flex-direction: column;
-    flex-shrink: 0; /* Prevents sidebar from shrinking */
-    height: 100%;   /* Fill height of wrapper */
+    width: 220px;
+    background: #111827;
+    color: #fff;
+    padding: 20px;
+    flex-shrink: 0;
 }
 
-.sidebar-brand {
-    height: 70px;
-    display: flex;
-    align-items: center;
-    padding: 0 24px;
-    font-size: 1.25rem;
-    font-weight: 700;
-    border-bottom: 1px solid rgba(255,255,255,0.1);
-    color: var(--white);
+.sidebar .sidebar-brand {
+    display: block;
+    color: #ffffff;
     text-decoration: none;
-}
-
-.sidebar-menu {
-    padding: 20px 10px;
-    flex: 1;
 }
 
 .sidebar-menu a {
-    display: flex;
-    align-items: center;
-    padding: 12px 20px;
-    color: #cbd5e1;
+    display: block;
+    color: #fff;
     text-decoration: none;
-    border-radius: 8px;
-    margin-bottom: 5px;
-    font-weight: 500;
-    transition: all 0.2s ease;
+    margin-bottom: 10px;
+    padding: 8px 10px;
+    border-radius: 5px;
 }
 
+.sidebar-menu a.active,
 .sidebar-menu a:hover {
-    background-color: rgba(255,255,255,0.05);
-    color: var(--white);
+    background: #2563eb;
 }
 
-.sidebar-menu a.active {
-    background-color: var(--accent);
-    color: var(--white);
-    box-shadow: 0 4px 6px -1px rgba(37, 99, 235, 0.4);
+.dashboard-main {
+    flex-grow: 1;
+    padding: 20px;
+    background: #f8fafc;
 }
 
 /* --- Main Content --- */
@@ -363,82 +338,6 @@ tr:hover td { background-color: #f8fafc; }
     font-size: 0.9rem;
 }
 .btn-secondary:hover { background: #f1f5f9; }
-/* --- Notification Bell Styles --- */
-.notification-icon {
-    position: relative;
-    cursor: pointer;
-    color: var(--text-main);
-    transition: 0.2s;
-}
-.notification-icon:hover { color: var(--accent); }
-
-.badge-count {
-    position: absolute;
-    top: -5px;
-    right: -5px;
-    background-color: var(--danger);
-    color: white;
-    font-size: 0.7rem;
-    font-weight: bold;
-    padding: 2px 5px;
-    border-radius: 10px;
-    border: 2px solid white;
-}
-
-.notif-dropdown {
-    display: none;
-    position: absolute;
-    top: 60px;
-    right: 20px; /* Aligns with the right side of header */
-    width: 300px;
-    background: white;
-    border-radius: 8px;
-    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
-    border: 1px solid #e2e8f0;
-    z-index: 500;
-}
-
-/* Toggles visibility via JS */
-.notif-dropdown.show {
-    display: block;
-    animation: slideDown 0.2s ease-out;
-}
-
-.notif-header {
-    padding: 12px 16px;
-    border-bottom: 1px solid #f1f5f9;
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    font-weight: 600;
-    font-size: 0.9rem;
-}
-
-.notif-list {
-    max-height: 300px;
-    overflow-y: auto;
-}
-
-.notif-item {
-    display: block;
-    padding: 12px 16px;
-    border-bottom: 1px solid #f1f5f9;
-    text-decoration: none;
-    color: var(--text-main);
-    transition: 0.2s;
-}
-
-.notif-item:hover { background-color: #f8fafc; }
-
-.notif-item.unread {
-    background-color: #eff6ff;
-    border-left: 3px solid var(--accent);
-}
-
-.notif-text {
-    font-size: 0.9rem;
-    margin-bottom: 4px;
-}
 
 @keyframes slideDown {
     from { opacity: 0; transform: translateY(-10px); }
