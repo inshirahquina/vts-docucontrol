@@ -58,6 +58,7 @@ if($role == 'requestor') {
         // Allow cancel if Requested or Pending HOD
         if(in_array($req['current_status'], ['Requested', 'Pending HOD Approval'])) {
             $pdo->prepare("UPDATE requests SET current_status='Cancelled', status='rejected' WHERE id=?")->execute([$requestId]);
+            $pdo->prepare("UPDATE files SET status='available' WHERE id=?")->execute([$req['file_id']]);
             logHistory($pdo,$requestId,$req['file_id'],'Cancelled',$userId);
         }
     }
@@ -153,11 +154,24 @@ if($role == 'hod') {
     if($action == 'reject_hod') {
         if($req['current_status'] == 'Pending HOD Approval') {
             if($req['extension_count'] > 0) {
-                 $pdo->prepare("UPDATE requests SET current_status='Released', status='active' WHERE id=?")->execute([$requestId]);
-                 logHistory($pdo,$requestId,$req['file_id'],'Extension Rejected',$userId);
+
+                $pdo->prepare("UPDATE requests 
+                            SET current_status='Released', status='active' 
+                            WHERE id=?")->execute([$requestId]);
+
+                logHistory($pdo,$requestId,$req['file_id'],'Extension Rejected',$userId);
+
             } else {
-                 $pdo->prepare("UPDATE requests SET current_status='Cancelled', status='rejected' WHERE id=?")->execute([$requestId]);
-                 logHistory($pdo,$requestId,$req['file_id'],'Rejected by HOD',$userId);
+
+                $pdo->prepare("UPDATE requests 
+                            SET current_status='Cancelled', status='rejected' 
+                            WHERE id=?")->execute([$requestId]);
+
+                $pdo->prepare("UPDATE files 
+                            SET status='available' 
+                            WHERE id=?")->execute([$req['file_id']]);
+
+                logHistory($pdo,$requestId,$req['file_id'],'Rejected by HOD',$userId);
             }
         }
     }
@@ -225,6 +239,7 @@ if($role == 'admin') {
 
     if($action == 'complete_transaction' && $req['current_status']=='File Restored') {
         $pdo->prepare("UPDATE requests SET current_status='Completed', status='returned' WHERE id=?")->execute([$requestId]);
+        $pdo->prepare("UPDATE files SET status='available' WHERE id=?")->execute([$req['file_id']]);
         logHistory($pdo,$requestId,$req['file_id'],'Completed',$userId);
     }
 

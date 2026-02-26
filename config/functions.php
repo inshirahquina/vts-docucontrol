@@ -1,6 +1,4 @@
 <?php
-// 1. DEFINE BASE URL (Must be at the very top)
-// Change '/vts_library/' if your folder name is different
 define('BASE_URL', '/vts_library/');
 
 // 2. Start session if not started

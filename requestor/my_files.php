@@ -67,9 +67,7 @@ $totalRows = $stmtCount->fetchColumn();
 $totalPages = ceil($totalRows / $perPage);
 
 // --- MAIN QUERY ---
-// FIX: Calculate 'last_activity' timestamp for TRUE chronological sorting.
-// We use GREATEST to find the most recent date among updates, release, retrieval, or creation.
-// COALESCE is used as fallback if GREATEST returns NULL (e.g. no updates yet).
+
 $sql = "SELECT r.*, f.file_name, f.allocation, f.box_no, f.department,
         GREATEST(
             COALESCE(r.updated_at, '1970-01-01'), 
@@ -221,7 +219,7 @@ require_once '../includes/header.php';
                         if($statusKey==='Released') {
                             $actionBtn = true;
                             $actionType = 'return';
-                            $showExtend = ($row['extension_count'] < 2);
+                            $showExtend = (!$overDue && $row['extension_count'] < 2);
                         }
                         if(in_array($statusKey, ['Requested', 'Pending HOD Approval'])) {
                             $actionBtn = true;

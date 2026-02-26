@@ -8,8 +8,7 @@ if(!isLoggedIn() || ($_SESSION['active_role'] ?? '') !== 'hod'){
 
 // Handle Approval/Rejection
 if($_SERVER['REQUEST_METHOD'] == 'POST') {
-    // Ideally, verify the HOD owns this request before processing action here too
-    // But for now, we focus on displaying the correct list.
+  
     $action = $_POST['action'] ?? '';
     $id = $_POST['request_id'] ?? '';
 }

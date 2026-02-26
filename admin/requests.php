@@ -24,10 +24,13 @@ $whereClauses = [];
 $params = [];
 
 if ($searchTerm) {
-    $whereClauses[] = "(f.file_name LIKE :search 
-                        OR u_req.full_name LIKE :search 
-                        OR f.allocation LIKE :search)";
-    $params[':search'] = "%$searchTerm%";
+    $whereClauses[] = "(f.file_name LIKE :search1 
+                        OR u_req.full_name LIKE :search2 
+                        OR f.allocation LIKE :search3)";
+    
+    $params[':search1'] = "%$searchTerm%";
+    $params[':search2'] = "%$searchTerm%";
+    $params[':search3'] = "%$searchTerm%";
 }
 
 if (!empty($filterStatuses) && is_array($filterStatuses)) {
@@ -182,8 +185,8 @@ require_once '../includes/header.php';
                                 $isOverdue = ($dueDate && strtotime(date('Y-m-d')) > strtotime($dueDate) && $displayStatus == 'Released');
                                 
                                 $slaColor = '#10b981'; 
-                                if ($mins > 20) $slaColor = '#ef4444'; 
-                                elseif ($mins > 15) $slaColor = '#f59e0b'; 
+                                if ($mins > 10) $slaColor = '#ef4444'; 
+                                elseif ($mins > 8) $slaColor = '#f59e0b'; 
 
                                 $lastUpdate = $row['last_updated_time'];
                             ?>
@@ -211,7 +214,7 @@ require_once '../includes/header.php';
 
                                 <td class="timestamp-col">
                                     <?php if($row['hod_timestamp']): ?>
-                                        <!-- Show HOD timestamp if available -->
+
                                         <div class="time-display"><?= date('d M Y', strtotime($row['hod_timestamp'])) ?></div>
                                         <div class="time-small"><?= date('H:i', strtotime($row['hod_timestamp'])) ?></div>
                                     <?php elseif($row['last_updated_time']): ?>
@@ -243,7 +246,7 @@ require_once '../includes/header.php';
                                             <div class="sla-time" style="color:<?= $slaColor ?>">
                                                 <strong><?= formatDuration($mins) ?></strong>
                                             </div>
-                                            <div class="sla-limit">(Limit: 20m)</div>
+                                            <div class="sla-limit">(Limit: 10m)</div>
                                         </div>
                                     <?php else: ?>
                                         <span class="text-muted">--</span>
@@ -252,7 +255,6 @@ require_once '../includes/header.php';
 
                                 <td class="action-col">
                                     <?php 
-                                    // ACTION LOGIC (Same as before, unchanged logic just cleaner look)
                                     if($displayStatus == 'Pending HOD Approval'): ?>
                                         <span class="info-text waiting">Waiting for HOD</span>
 
