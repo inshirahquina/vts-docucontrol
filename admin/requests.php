@@ -44,7 +44,28 @@ if (!empty($filterStatuses) && is_array($filterStatuses)) {
 }
 
 $whereSQL = !empty($whereClauses) ? "WHERE " . implode(" AND ", $whereClauses) : "";
+$perPage = 20;
+$page = isset($_GET['page']) && is_numeric($_GET['page']) ? (int)$_GET['page'] : 1;
+if ($page < 1) $page = 1;
 
+$offset = ($page - 1) * $perPage;
+$countSQL = "
+SELECT COUNT(*)
+FROM requests r
+JOIN files f ON r.file_id = f.id
+JOIN users u_req ON r.user_id = u_req.id
+LEFT JOIN users u_op ON r.assigned_to = u_op.id
+$whereSQL
+";
+
+$countStmt = $pdo->prepare($countSQL);
+$countStmt->execute($params);
+$totalRows = $countStmt->fetchColumn();
+$totalPages = ceil($totalRows / $perPage);
+if ($page > $totalPages && $totalPages > 0) {
+    $page = $totalPages;
+    $offset = ($page - 1) * $perPage;
+}
 $sql = "
 SELECT 
     r.*,
@@ -77,9 +98,16 @@ LEFT JOIN users u_op ON r.assigned_to = u_op.id
 $whereSQL
 ORDER BY r.updated_at DESC
 ";
-
+$sql .= " LIMIT :limit OFFSET :offset";
 $stmt = $pdo->prepare($sql);
-$stmt->execute($params);
+foreach ($params as $key => $value) {
+    $stmt->bindValue($key, $value);
+}
+
+$stmt->bindValue(':limit', $perPage, PDO::PARAM_INT);
+$stmt->bindValue(':offset', $offset, PDO::PARAM_INT);
+
+$stmt->execute();
 
 $statusList = [
     'Pending HOD Approval',
@@ -158,7 +186,7 @@ require_once '../includes/header.php';
                                 <th>File Details</th>
                                 <th>Status</th>
                                 <th>Last Updated</th>
-                                <th>Timeline & SLA</th>
+                                <th>Timeline</th>
                                 <th>Actions</th>
                             </tr>
                         </thead>
@@ -321,6 +349,36 @@ require_once '../includes/header.php';
                             <?php endwhile; ?>
                         </tbody>
                     </table>
+                    <?php if ($totalPages > 1): ?>
+                        <div class="pagination-wrapper">
+
+                            <?php if ($page > 1): ?>
+                                <a class="page-btn" 
+                                href="?<?= http_build_query(array_merge($_GET, ['page'=>$page-1])) ?>">
+                                ← Prev
+                                </a>
+                            <?php endif; ?>
+
+                            <?php
+                            $start = max(1, $page - 4);
+                            $end = min($totalPages, $start + 9);
+
+                            for ($i = $start; $i <= $end; $i++): ?>
+                                <a class="page-btn <?= $i == $page ? 'active' : '' ?>"
+                                href="?<?= http_build_query(array_merge($_GET, ['page'=>$i])) ?>">
+                                <?= $i ?>
+                                </a>
+                            <?php endfor; ?>
+
+                            <?php if ($page < $totalPages): ?>
+                                <a class="page-btn"
+                                href="?<?= http_build_query(array_merge($_GET, ['page'=>$page+1])) ?>">
+                                Next →
+                                </a>
+                            <?php endif; ?>
+
+                        </div>
+                        <?php endif; ?>
                 </div>
             </div>
 
@@ -404,6 +462,33 @@ require_once '../includes/header.php';
 
 .info-text { font-style: italic; font-size: 0.85rem; padding: 5px 10px; background: #f3f4f6; border-radius: 4px; display: inline-block; }
 .info-text.waiting { color: #d97706; background: #fff7ed; }
+
+.pagination-wrapper {
+    display: flex;
+    gap: 6px;
+    justify-content: center;
+    padding: 20px 0;
+}
+
+.page-btn {
+    padding: 6px 12px;
+    border: 1px solid #e5e7eb;
+    background: #fff;
+    border-radius: 6px;
+    text-decoration: none;
+    font-size: 0.85rem;
+    color: #374151;
+}
+
+.page-btn.active {
+    background: #111827;
+    color: white;
+    border-color: #111827;
+}
+
+.page-btn:hover {
+    background: #f3f4f6;
+}
 
 </style>
 <script>

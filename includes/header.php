@@ -1,11 +1,9 @@
 <?php
-// 1. Load functions immediately to get BASE_URL and Session
 require_once '../config/functions.php';
 
 // 2. Load Database
 require_once '../config/db.php';
 
-// 3. Security: Redirect if not logged in
 if(!isLoggedIn()) {
     redirect(BASE_URL . 'index.php');
 }
@@ -17,10 +15,8 @@ if(!isLoggedIn()) {
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>VTS DocuControl</title>
     
-    <!-- 4. Load CSS using BASE_URL -->
     <link rel="stylesheet" href="<?= BASE_URL ?>assets/css/style.css">
-    
-    <!-- Role Switcher Styles (Inline for now, move to style.css if preferred) -->
+
     <style>
         .role-switcher { position: relative; display: inline-block; }
         .role-btn {
