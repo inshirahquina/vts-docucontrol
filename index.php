@@ -74,7 +74,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $log = $pdo->prepare("INSERT INTO audit_logs (user_id, action, timestamp, details) VALUES (?, 'User Logged In', NOW(), ?)");
         $log->execute([$user['id'], json_encode(['base_role' => $dbRole, 'active_role' => $_SESSION['active_role']])]);
 
-        // --- REDIRECT BASED ON ACTIVE ROLE ---
+
         switch ($_SESSION['active_role']) {
             case 'requestor':
                 redirect('requestor/dashboard.php');
@@ -158,9 +158,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 <button type="submit">Sign In</button>
             </form>
             
-            <div style="margin-top: 20px; text-align: center;">
+            <!-- <div style="margin-top: 20px; text-align: center;">
                 <a href="#" style="color: var(--accent); text-decoration: none; font-size: 0.9rem; font-weight: 500;">Forgot password?</a>
-            </div>
+            </div> -->
         </div>
     </div>
 
