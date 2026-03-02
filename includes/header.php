@@ -34,14 +34,18 @@ if(!isLoggedIn()) {
             top: 0;
             z-index: 100;
         }
-
         .page-title {
             font-size: 1.25rem;
             font-weight: 700;
             color: #1e293b;
+            text-decoration: none;
+            cursor: pointer;
         }
 
-        /* --- USER PROFILE DROPDOWN --- */
+        .page-title:hover {
+            color: var(--accent);
+        }
+
         .profile-menu {
             position: relative;
         }
@@ -203,7 +207,9 @@ if(!isLoggedIn()) {
 
 <div class="main-content">
     <header>
-        <div class="page-title">Dashboard</div>
+        <a href="<?= BASE_URL . $activeRole ?>/dashboard.php" class="page-title">
+            Dashboard
+        </a>
         
         <div class="profile-menu" id="profileMenu">
             <div class="profile-btn" onclick="toggleMenu()">

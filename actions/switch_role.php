@@ -50,6 +50,5 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['new_role'])) {
     }
 }
 
-// If something went wrong or not allowed, just go back to index
 redirect('../index.php');
 ?>

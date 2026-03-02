@@ -119,24 +119,42 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             <!-- Password Section -->
             <div class="input-group">
                 <label>Current Password</label>
-                <div class="input-wrapper">
+                <div class="input-wrapper password-field">
                     <input type="password" name="current_password" placeholder="Enter current password" required>
+                    <span class="toggle-password">
+                        <svg class="eye-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8S1 12 1 12z"/>
+                            <circle cx="12" cy="12" r="3"/>
+                        </svg>
+                    </span>
                 </div>
             </div>
 
             <div class="input-group">
                 <label>New Password</label>
-                <div class="input-wrapper">
+                <div class="input-wrapper password-field">
                     <input type="password" name="new_password" placeholder="Leave blank to keep current">
+                    <span class="toggle-password">
+                        <svg class="eye-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8S1 12 1 12z"/>
+                            <circle cx="12" cy="12" r="3"/>
+                        </svg>
+                    </span>
                 </div>
                 <span class="note-text">Min 6 characters. Leave blank if you don't want to change it.</span>
             </div>
 
             <div class="input-group">
                 <label>Confirm New Password</label>
-                <div class="input-wrapper">
-                    <input type="password" name="confirm_password" placeholder="Confirm new password">
-                </div>
+            <div class="input-wrapper password-field">
+                <input type="password" name="confirm_password" placeholder="Confirm new password">
+                <span class="toggle-password">
+                    <svg class="eye-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8S1 12 1 12z"/>
+                        <circle cx="12" cy="12" r="3"/>
+                    </svg>
+                </span>
+            </div>
             </div>
 
             <div class="btn-group">
@@ -173,7 +191,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             border-radius: 5px;
             font-size: 1rem;
             transition: border-color 0.3s;
-            box-sizing: border-box; /* Critical for padding */
+            box-sizing: border-box; 
         }
         .input-wrapper input:focus {
             border-color: #0056b3;
@@ -205,5 +223,57 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         .success-box { color: #155724; background-color: #d4edda; border: 1px solid #c3e6cb; padding: 12px; border-radius: 5px; margin-bottom: 20px; font-size: 0.9rem; }
 
         .note-text { font-size: 0.85rem; color: #888; margin-top: 5px; }
+        .toggle-password {
+            position: absolute;
+            right: 12px;
+            top: 50%;
+            transform: translateY(-50%);
+            cursor: pointer;
+            width: 18px;
+            height: 18px;
+            color: #64748b;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .toggle-password:hover {
+            color: #0056b3;
+        }
+
+        .eye-icon {
+            width: 18px;
+            height: 18px;
+        }
     </style>
-</html>
+    <script>
+    document.querySelectorAll('.toggle-password').forEach(function(toggle) {
+
+        toggle.addEventListener('click', function() {
+            const input = this.previousElementSibling;
+
+            if (input.type === "password") {
+                input.type = "text";
+
+                this.innerHTML = `
+                       <svg class="eye-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8S1 12 1 12z"/>
+                        <circle cx="12" cy="12" r="3"/>
+                    </svg>
+                  
+                `;
+
+            } else {
+                input.type = "password";
+
+                this.innerHTML = `
+                      <svg class="eye-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M17.94 17.94A10.94 10.94 0 0 1 12 20C5 20 1 12 1 12a21.77 21.77 0 0 1 5.06-6.94"/>
+                        <path d="M1 1l22 22"/>
+                    </svg>
+                `;
+            }
+        });
+
+    });
+    </script>
