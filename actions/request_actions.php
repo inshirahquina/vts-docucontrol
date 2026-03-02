@@ -45,7 +45,7 @@ if($role == 'requestor') {
         $pdo->prepare("UPDATE files SET status='requested' WHERE id=?")->execute([$fileId]);
         logHistory($pdo,$requestId,$fileId,'Requested (Pending HOD)',$userId);
 
-        header("Location: /vts_library/requestor/my_files.php");
+        header("Location: /requestor/my_files.php");
         exit;
     }
 
@@ -98,7 +98,7 @@ if($role == 'requestor') {
         }
     }
 
-    header("Location: /vts_library/requestor/my_files.php");
+    header("Location: //requestor/my_files.php");
     exit;
 }
 
@@ -123,7 +123,7 @@ if($role == 'hod') {
     $hod_department = $hodData['department'] ?? '';
 
     if (!$req || $req['requester_hod_id'] != $userId){
-        header("Location: /vts_library/hod/approvals.php");
+        header("Location: /hod/approvals.php");
         exit;
     }
     
@@ -176,7 +176,7 @@ if($role == 'hod') {
         }
     }
     
-    header("Location: /vts_library/hod/approvals.php");
+    header("Location: /hod/approvals.php");
     exit;
 }
 
@@ -263,6 +263,6 @@ if(in_array($role,['staff','operations'])) {
 
 }
 
-header("Location: /vts_library/admin/requests.php");
+header("Location: /admin/requests.php");
 exit;
 ?>

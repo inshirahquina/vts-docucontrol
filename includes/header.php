@@ -228,11 +228,9 @@ if(!isLoggedIn()) {
             <div class="profile-dropdown">
                 <!-- User Info Summary -->
                 <div class="dropdown-header">
-                    <strong><?= $currentUserName ?></strong>
-                    <small>Currently acting as: <?= ucfirst($activeRole) ?></small>
+                    <small>Active Role: <?= ucfirst($activeRole) ?></small>
                 </div>
 
-                <!-- Role Switcher Section (Logic: Only show if user has multiple roles) -->
                 <?php 
                 $showSwitcher = false;
                 $allowedSwitches = [];
