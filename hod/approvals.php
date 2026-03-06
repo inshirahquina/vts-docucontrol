@@ -16,7 +16,11 @@ if($_SERVER['REQUEST_METHOD'] == 'POST') {
 $current_user_id = $_SESSION['user_id'];
 
 $stmt = $pdo->prepare("
-    SELECT r.*, f.file_name, u.full_name as requester_name 
+    SELECT r.*, 
+       f.file_name,
+       f.department,
+       f.allocation,
+       u.full_name as requester_name 
     FROM requests r
     JOIN files f ON r.file_id = f.id
     JOIN users u ON r.user_id = u.id
@@ -46,6 +50,7 @@ require_once '../includes/header.php';
                             <tr>
                                 <th>Date</th>
                                 <th>File</th>
+                                <th>Department / Project</th>
                                 <th>Requester</th>
                                 <th>Type</th>
                                 <th>Action</th>
@@ -56,9 +61,20 @@ require_once '../includes/header.php';
                                 $isExtension = $p['extension_count'] > 0;
                             ?>
                             <tr>
-                                <td><?= date('d M Y', strtotime($p['borrow_date'])) ?></td>
-                                <td><strong><?= sanitize($p['file_name']) ?></strong></td>
-                                <td><?= sanitize($p['requester_name']) ?></td>
+                                  <td><?= date('d M Y', strtotime($p['borrow_date'])) ?></td>
+
+                                    <td>
+                                        <strong><?= sanitize($p['file_name']) ?></strong>
+                                    </td>
+
+                                    <td>
+                                        <?= sanitize($p['department']) ?><br>
+                                        <small style="color:#6b7280;">
+                                            <?= sanitize($p['allocation']) ?>
+                                        </small>
+                                    </td>
+
+                                    <td><?= sanitize($p['requester_name']) ?></td>
                                 <td>
                                     <?php if($isExtension): ?>
                                         <span style="color:#d97706; font-weight:bold;">Extension Request #<?= $p['extension_count'] ?></span>

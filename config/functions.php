@@ -129,14 +129,34 @@ function addFileHistory($pdo, $file_id, $request_id, $action, $user_id = null, $
     }
 }
 
-/**
- * Helper to build query strings for pagination while preserving filters.
- */
 function buildQueryString($overrides = []) {
     $query = $_GET; 
     foreach ($overrides as $key => $value) {
         $query[$key] = $value; 
     }
     return http_build_query($query);
+}
+
+function calculateDueDate($pdo, $startDate, $days = 3){
+
+    $stmt = $pdo->query("SELECT holiday_date FROM holidays");
+    $holidays = $stmt->fetchAll(PDO::FETCH_COLUMN);
+
+    $date = new DateTime($startDate);
+    $added = 0;
+
+    while ($added < $days) {
+
+        $date->modify('+1 day');
+
+        $isWeekend = $date->format('N') >= 6;
+        $isHoliday = in_array($date->format('Y-m-d'), $holidays);
+
+        if (!$isWeekend && !$isHoliday) {
+            $added++;
+        }
+    }
+
+    return $date->format('Y-m-d');
 }
 ?>

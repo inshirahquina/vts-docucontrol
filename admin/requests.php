@@ -85,11 +85,7 @@ SELECT
         ELSE NULL
     END AS retrieval_duration,
 
-    CASE 
-        WHEN r.released_at IS NOT NULL 
-            THEN DATE_ADD(r.released_at, INTERVAL (3 + (r.extension_count * 3)) DAY)
-        ELSE NULL
-    END AS calculated_due_date
+    r.due_date AS calculated_due_date
 
 FROM requests r
 JOIN files f ON r.file_id = f.id
@@ -210,7 +206,7 @@ require_once '../includes/header.php';
 
                                 $mins = $row['retrieval_duration'];
                                 $dueDate = $row['calculated_due_date'];
-                                $isOverdue = ($dueDate && strtotime(date('Y-m-d')) > strtotime($dueDate) && $displayStatus == 'Released');
+                                $isOverdue = ($dueDate && strtotime('today') > strtotime($dueDate) && $displayStatus == 'Released');
                                 
                                 $slaColor = '#10b981'; 
                                 if ($mins > 10) $slaColor = '#ef4444'; 

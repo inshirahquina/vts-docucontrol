@@ -15,6 +15,10 @@ SELECT
     h.id AS history_id,
     r.id AS request_id,
     f.file_name,
+    f.department,
+    f.allocation,
+    r.released_at,
+    r.extension_count,
     u.full_name AS requester_name,
 
     CASE 
@@ -97,9 +101,11 @@ require_once '../includes/header.php';
                     <table class="modern-table">
                         <thead>
                             <tr>
-                                <th>Date Requested</th>
+                               <th>Date Requested</th>
                                 <th>File</th>
+                                <th>Department / Project</th>
                                 <th>Requester</th>
+                                <th>Due Date</th>
                                 <th>Type</th>
                                 <th>Action by HOD</th>
                                 <th>Timestamp</th>
@@ -107,6 +113,21 @@ require_once '../includes/header.php';
                         </thead>
                         <tbody>
                             <?php foreach($history as $h): 
+                                $releasedAt = $h['released_at'] ?? null;
+                                $dueDate = null;
+
+                                if ($releasedAt) {
+
+                                    $daysAllowed = 3;
+
+                                    if (!empty($h['extension_label']) && preg_match('/#(\d+)/', $h['extension_label'], $m)) {
+                                        $extNumber = (int)$m[1];
+                                        $daysAllowed += ($extNumber * 3);
+                                    }
+
+                                    $due = calculateDueDate($pdo, $releasedAt, $daysAllowed);
+                                    $dueDate = date('d M Y', strtotime($due));
+                                }
                                 if (!empty($h['extension_label'])) {
                                     $typeLabel = $h['extension_label'];
                                 } else {
@@ -126,8 +147,22 @@ require_once '../includes/header.php';
                             ?>
                             <tr>
                                 <td><?= date('d M Y H:i:s', strtotime($h['requested_at'])) ?></td>
-                                <td><strong><?= sanitize($h['file_name']) ?></strong></td>
+                                <td>
+                                    <strong><?= sanitize($h['file_name']) ?></strong>
+                                </td>
+
+                                <td>
+                                    <?= sanitize($h['department']) ?><br>
+                                    <small style="color:#6b7280;">
+                                        <?= sanitize($h['allocation']) ?>
+                                    </small>
+                                </td>
+
                                 <td><?= sanitize($h['requester_name']) ?></td>
+                                <td>
+                                    <?= $dueDate ?? '--' ?>
+                                </td>
+
                                 <td><?= $typeLabel ?></td>
                                 <td><?= $actionDisplay ?></td>
                                 <td><?= $h['hod_timestamp'] ? date('d M Y H:i:s', strtotime($h['hod_timestamp'])) : '-' ?></td>

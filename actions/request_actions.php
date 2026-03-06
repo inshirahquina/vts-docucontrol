@@ -83,8 +83,7 @@ if($role == 'requestor') {
 
         // Logic: Max 2 extensions (count 0 -> 1, 1 -> 2)
         if($req['current_status']=='Released' && $req['extension_count'] < 2) {
-            
-            // Update status to pending HOD approval for extension, increment count
+
             $newCount = $req['extension_count'] + 1;
             $pdo->prepare("
                 UPDATE requests 
@@ -98,7 +97,7 @@ if($role == 'requestor') {
         }
     }
 
-    header("Location: //requestor/my_files.php");
+    header("Location: /requestor/my_files.php");
     exit;
 }
 
@@ -129,23 +128,31 @@ if($role == 'hod') {
     
     if($action == 'approve_hod') {
         if($req['current_status'] == 'Pending HOD Approval') {
+
             if($req['extension_count'] > 0) {
+
+                $newDue = calculateDueDate($pdo, $req['due_date'], 3);
+
                 $pdo->prepare("
                     UPDATE requests 
-                    SET current_status='Released', 
-                        status='active', 
-                        due_date = DATE_ADD(due_date, INTERVAL 3 DAY),
+                    SET current_status='Released',
+                        status='active',
+                        due_date = ?,
+                        hod_timestamp = NOW()
+                    WHERE id=?
+                ")->execute([$newDue, $requestId]);
+
+                logHistory($pdo,$requestId,$req['file_id'],'Extension Approved',$userId);
+
+            } else {
+
+                $pdo->prepare("
+                    UPDATE requests 
+                    SET current_status='Approved by HOD',
                         hod_timestamp = NOW()
                     WHERE id=?
                 ")->execute([$requestId]);
-                logHistory($pdo,$requestId,$req['file_id'],'Extension Approved',$userId);
-            } else {
-                $pdo->prepare("
-                UPDATE requests 
-                SET current_status = 'Approved by HOD',
-                    hod_timestamp = NOW()
-                WHERE id = ?
-            ")->execute([$requestId]);
+
                 logHistory($pdo,$requestId,$req['file_id'],'Approved by HOD',$userId);
             }
         }
@@ -208,14 +215,16 @@ if($role == 'admin') {
 
     if($action == 'release_file' && $req['current_status']=='File Retrieved') {
 
-    $pdo->prepare("
-        UPDATE requests
-        SET current_status='Released',
-            status='active',
-            released_at = NOW(),
-            due_date = DATE_ADD(NOW(), INTERVAL 3 DAY)
-        WHERE id=?
-    ")->execute([$requestId]);
+        $dueDate = calculateDueDate($pdo, date('Y-m-d'), 3);
+
+        $pdo->prepare("
+            UPDATE requests
+            SET current_status='Released',
+                status='active',
+                released_at = NOW(),
+                due_date = ?
+            WHERE id=?
+        ")->execute([$dueDate,$requestId]);
 
     $pdo->prepare("
         UPDATE files

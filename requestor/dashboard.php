@@ -35,35 +35,8 @@ if ($base_role !== 'requestor' && $base_role !== 'hod') redirect('../index.php')
                 </div>
             </div>
 
-            <div style="display: grid; grid-template-columns: 1fr 2fr; gap: 24px;">
+			<div style="display: grid; grid-template-columns: 1fr; gap: 24px;">
                 
-                <!-- Quick Request -->
-                <div class="card">
-                    <h3>Request a File</h3>
-                    <form method="POST" action="../actions/request_actions.php">
-                        <input type="hidden" name="action" value="create_request">
-                        
-                        <div class="input-group" style="margin-bottom:15px;">
-                            <label>Select File</label>
-                            <select name="file_id" required style="width:100%; padding:10px; border:1px solid #ddd; border-radius:6px;">
-                                <option value="">-- Choose File --</option>
-                                <?php 
-                                // Only show available files
-                                $files = $pdo->query("SELECT id, file_name, allocation FROM files WHERE status = 'available' ORDER BY file_name ASC");
-                                while($f = $files->fetch()):
-                                ?>
-                                    <option value="<?= $f['id'] ?>">
-                                        <?= sanitize($f['file_name']) ?> 
-                                        (<?= sanitize($f['allocation']) ?>)
-                                    </option>
-                                <?php endwhile; ?>
-                            </select>
-                        </div>
-                        
-                        <button type="submit" class="btn" style="width:100%;">Submit Request</button>
-                    </form>
-                </div>
-
                 <!-- Recent Activity -->
                 <div class="card">
                     <h3>Recent Status</h3>

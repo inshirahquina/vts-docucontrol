@@ -203,13 +203,8 @@ require_once '../includes/header.php';
                         if(!isset($statusConfig[$statusKey])) $statusKey='Cancelled';
                         [$icon, $label, $classes, $group] = $statusConfig[$statusKey];
 
-                        // Date Logic
                         $releasedAt = $row['released_at'];
-                        $dueDate = null;
-                        if ($releasedAt) {
-                            $daysAllowed = 3 + ($row['extension_count'] * 3);
-                            $dueDate = date('Y-m-d', strtotime($releasedAt . " + $daysAllowed days"));
-                        }
+                        $dueDate = $row['due_date'] ?? null;
                         $overDue = ($dueDate && strtotime(date('Y-m-d')) > strtotime($dueDate));
 
                         $actionBtn = false;

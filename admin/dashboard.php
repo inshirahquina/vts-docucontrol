@@ -15,7 +15,6 @@ require_once '../includes/header.php';
  $total_files = $pdo->query("SELECT COUNT(*) FROM files")->fetchColumn();
 
 // 2. OVERDUE FILES
-// Logic: Status mesti 'Released' DAN due_date sudah luput (kurang dari hari ini)
  $overdue_files = $pdo->query("SELECT COUNT(*) FROM requests WHERE current_status = 'Released' AND due_date < CURDATE()")->fetchColumn();
 
 // 3. PENDING ADMIN APPROVALS (Items stuck at 'Requested' or 'Return Requested' needing Admin Assignment)

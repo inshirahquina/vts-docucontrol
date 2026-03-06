@@ -43,7 +43,6 @@ $stmt = $pdo->prepare($sql);
 $stmt->execute($params);
 $files = $stmt;
 
-/* ---------------- ADD FILE ---------------- */
 if(isset($_POST['add_file'])) {
     $sql = "INSERT INTO files 
             (file_name, allocation, box_no, department, month_year, retention_period, status) 
@@ -57,7 +56,7 @@ if(isset($_POST['add_file'])) {
             $_POST['department'],
             $_POST['month_year'],
             $_POST['retention'],
-            'available' // Default status for new files
+            'available' 
         ]);
         header("Location: files.php?msg=added");
         exit;
@@ -66,7 +65,7 @@ if(isset($_POST['add_file'])) {
     }
 }
 
-/* ---------------- EDIT FILE ---------------- */
+
 if(isset($_POST['edit_file'])) {
     $sql = "UPDATE files SET 
             file_name = ?, allocation = ?, box_no = ?, 
@@ -141,7 +140,7 @@ if(isset($_POST['edit_file'])) {
                     <div class="filter-item">
                         <select name="status" class="modern-select">
                             <option value="">All Status</option>
-                            <!-- Dynamic Status Filter based on common statuses -->
+
                             <option value="available" <?= (isset($_GET['status']) && $_GET['status'] == 'available') ? 'selected' : '' ?>>Available</option>
                             <option value="borrowed" <?= (isset($_GET['status']) && $_GET['status'] == 'borrowed') ? 'selected' : '' ?>>Borrowed</option>
                             <option value="requested" <?= (isset($_GET['status']) && $_GET['status'] == 'requested') ? 'selected' : '' ?>>Requested</option>
