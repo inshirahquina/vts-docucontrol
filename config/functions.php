@@ -1,6 +1,13 @@
 <?php
 define('BASE_URL', '/vts_library/');
 
+use PHPMailer\PHPMailer\PHPMailer;
+use PHPMailer\PHPMailer\Exception;
+
+require_once __DIR__ . '/../PHPMailer/src/PHPMailer.php';
+require_once __DIR__ . '/../PHPMailer/src/SMTP.php';
+require_once __DIR__ . '/../PHPMailer/src/Exception.php';
+
 // 2. Start session if not started
 if (session_status() === PHP_SESSION_NONE) {
     session_start();
@@ -158,5 +165,35 @@ function calculateDueDate($pdo, $startDate, $days = 3){
     }
 
     return $date->format('Y-m-d');
+}
+
+function sendEmail($to,$subject,$body){
+
+    $mail = new PHPMailer(true);
+
+    try {
+
+        $mail->isSMTP();
+        $mail->Host = 'mail.vtsgroup.com.my';
+
+        $mail->SMTPAuth = true;
+        $mail->Username = 'elibrary@vtsgroup.com.my';
+        $mail->Password = '3Lry@vTs*!';
+
+        $mail->SMTPSecure = 'ssl';
+        $mail->Port = 465;
+
+        $mail->setFrom('elibrary@vtsgroup.com.my','VTS e-Library');
+        $mail->addAddress($to);
+
+        $mail->isHTML(true);
+        $mail->Subject = $subject;
+        $mail->Body = $body;
+
+        $mail->send();
+
+    } catch (Exception $e) {
+        error_log("Mail error: " . $mail->ErrorInfo);
+    }
 }
 ?>

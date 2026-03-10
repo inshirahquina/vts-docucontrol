@@ -62,6 +62,8 @@ $countStmt = $pdo->prepare($countSQL);
 $countStmt->execute($params);
 $totalRows = $countStmt->fetchColumn();
 $totalPages = ceil($totalRows / $perPage);
+$startResult = $totalRows > 0 ? $offset + 1 : 0;
+$endResult = min($offset + $perPage, $totalRows);
 if ($page > $totalPages && $totalPages > 0) {
     $page = $totalPages;
     $offset = ($page - 1) * $perPage;
@@ -222,14 +224,30 @@ require_once '../includes/header.php';
                                             Alloc: <?= sanitize($row['allocation']) ?> • 
                                             Box: <?= sanitize($row['box_no']) ?> • 
                                             Req by: <?= sanitize($row['requester_name']) ?>
+                                            <?php if(!empty($row['remarks'])): ?>
+                                            <div class="remark-text">
+                                            Remark: <?= sanitize($row['remarks']) ?>
+                                            </div>
+                                            <?php endif; ?>
                                         </span>
                                     </div>
                                 </td>
 
                                 <td>
-                                    <div class="status-badge" style="background:<?= $style['bg'] ?>; color:<?= $style['color'] ?>;">
-                                        <span class="icon"><?= $style['icon'] ?></span>
-                                        <?= $displayStatus ?>
+                                    <div>
+                                        <div class="status-badge" style="background:<?= $style['bg'] ?>; color:<?= $style['color'] ?>;">
+                                            <span class="icon"><?= $style['icon'] ?></span>
+                                            <?= $displayStatus ?>
+                                        </div>
+
+                                        <?php if(!empty($row['operator_name']) && 
+                                            in_array($displayStatus, ['Retrieval Assigned','Restoration Assigned'])): ?>
+                                            
+                                            <div class="assigned-label">
+                                                Assigned to: <?= sanitize($row['operator_name']) ?>
+                                            </div>
+
+                                        <?php endif; ?>
                                     </div>
                                     <?php if($row['extension_count'] > 0): ?>
                                         <div class="ext-badge">Extension x<?= $row['extension_count'] ?></div>
@@ -345,8 +363,12 @@ require_once '../includes/header.php';
                             <?php endwhile; ?>
                         </tbody>
                     </table>
+                    <div class="pagination-info">
+                        Showing <?= $startResult ?> - <?= $endResult ?> of <?= $totalRows ?> results
+                    </div>
+
                     <?php if ($totalPages > 1): ?>
-                        <div class="pagination-wrapper">
+                    <div class="pagination-wrapper">
 
                             <?php if ($page > 1): ?>
                                 <a class="page-btn" 
@@ -446,6 +468,7 @@ require_once '../includes/header.php';
 .action-col { min-width: 200px; }
 .inline-form { display: flex; gap: 8px; align-items: center; }
 .mini-select { padding: 6px 10px; border-radius: 6px; border: 1px solid #d1d5db; font-size: 0.85rem; background: #fff; cursor: pointer; }
+.assigned-label{ font-size:0.75rem; color:#6b7280; margin-top:4px;}
 
 /* Buttons */
 .btn { border: none; cursor: pointer; font-weight: 500; border-radius: 6px; transition: all 0.2s; }
@@ -458,12 +481,19 @@ require_once '../includes/header.php';
 
 .info-text { font-style: italic; font-size: 0.85rem; padding: 5px 10px; background: #f3f4f6; border-radius: 4px; display: inline-block; }
 .info-text.waiting { color: #d97706; background: #fff7ed; }
+.remark-text{
+font-size:0.75rem;
+color:#6b7280;
+margin-top:3px;
+font-style:italic;
+}
 
-.pagination-wrapper {
-    display: flex;
-    gap: 6px;
-    justify-content: center;
-    padding: 20px 0;
+.pagination-wrapper { display: flex; gap: 6px; justify-content: center; padding: 20px 0;}
+.pagination-info{
+    text-align:center;
+    font-size:0.85rem;
+    color:#6b7280;
+    margin-top:15px;
 }
 
 .page-btn {

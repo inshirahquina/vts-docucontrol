@@ -226,7 +226,13 @@ require_once '../includes/header.php';
                         <div class="card-main">
                             <div class="file-identity">
                                 <h4 class="file-title"><?= sanitize($row['file_name']) ?></h4>
-                                <div class="file-meta-badges">
+                                    <?php if(!empty($row['remarks'])): ?>
+                                    <div class="file-remark">
+                                        📝 <?= sanitize($row['remarks']) ?>
+                                    </div>
+                                    <?php endif; ?>
+
+                                    <div class="file-meta-badges">
                                     <span class="meta-badge dark"><?= sanitize($row['allocation']) ?></span>
                                     <span class="meta-badge gray"><?= sanitize($row['department']) ?></span>
                                 </div>
@@ -422,6 +428,13 @@ require_once '../includes/header.php';
 .pagination-controls { display: flex; gap: 6px; }
 .page-btn { padding: 8px 14px; border-radius: 6px; background: #fff; border: 1px solid #e5e7eb; color: #374151; text-decoration: none; font-size: 0.85rem; }
 .page-btn.active { background: #0d47a1; color: #fff; border-color: #0d47a1; }
+
+.file-remark{
+    font-size:0.8rem;
+    color:#6b7280;
+    margin-bottom:6px;
+    font-style:italic;
+}
 
 @media (max-width: 768px) {
     .file-card { flex-direction: column; align-items: flex-start; gap: 16px; }

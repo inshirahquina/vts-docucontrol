@@ -26,12 +26,13 @@ if (isLoggedIn() && isset($_SESSION['active_role'])) {
 
 $error = '';
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    $username = trim($_POST['username']);
-    $password = $_POST['password'];
+  
+  $username = trim($_POST['username']);
+  $password = $_POST['password'];
 
-    $stmt = $pdo->prepare("SELECT * FROM users WHERE username = ? OR email = ?");
-    $stmt->execute([$username, $username]);
-    $user = $stmt->fetch();
+  $stmt = $pdo->prepare("SELECT * FROM users WHERE username = ?");
+  $stmt->execute([$username]);
+  $user = $stmt->fetch();
 
     if ($user && password_verify($password, $user['password'])) {
 
@@ -140,10 +141,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             <form method="POST">
                 <div class="input-group">
-                    <label>Username / Email</label>
+                    <label>Username</label>
                     <div class="input-wrapper">
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>
-                        <input type="text" name="username" placeholder="e.g. admin or admin@vts.com" required autofocus>
+                        <input type="text" name="username" placeholder="e.g. admin" required autofocus>
                     </div>
                 </div>
 
@@ -164,4 +165,4 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         </div>
     </div>
 </body>
-</html>
+</html

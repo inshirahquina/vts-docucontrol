@@ -52,9 +52,6 @@ if (!empty($_GET['department']) && $_GET['department'] !== 'all') {
     $params[':dept'] = $_GET['department'];
 }
 
-// --- BUILD QUERIES ---
-
-// Build WHERE string
 $whereSQL = "";
 if (!empty($where)) {
     $whereSQL = "WHERE " . implode(" AND ", $where);
@@ -191,7 +188,17 @@ $files = $stmt;
                                             <form method="POST" action="../actions/request_actions.php" style="display:inline;">
                                                 <input type="hidden" name="action" value="create_request">
                                                 <input type="hidden" name="file_id" value="<?= $row['id'] ?>">
-                                                <button type="submit" class="btn btn-sm primary">Request</button>
+                                                <button 
+                                                    type="button" 
+                                                    class="btn btn-sm primary openRequestModal"
+                                                    data-file-id="<?= $row['id'] ?>"
+                                                    data-file-name="<?= htmlspecialchars($row['file_name']) ?>"
+                                                    data-allocation="<?= htmlspecialchars($row['allocation']) ?>"
+                                                    data-box="<?= htmlspecialchars($row['box_no']) ?>"
+                                                    data-dept="<?= htmlspecialchars($row['department']) ?>"
+                                                    >
+                                                    Request
+                                                </button>
                                             </form>
                                         <?php else: ?>
                                             <span class="disabled-text">Unavailable</span>
@@ -211,6 +218,33 @@ $files = $stmt;
                             <?php endif; ?>
                         </tbody>
                     </table>
+                    <div id="requestModal" class="modal-overlay">
+                        <div class="modal-box">
+                            <h3>Request File</h3>
+
+                            <div class="modal-details">
+                                <p><strong>File:</strong> <span id="m_file_name"></span></p>
+                                <p><strong>Allocation:</strong> <span id="m_allocation"></span></p>
+                                <p><strong>Box:</strong> <span id="m_box"></span></p>
+                                <p><strong>Department:</strong> <span id="m_dept"></span></p>
+                            </div>
+
+                            <br>
+
+                            <form method="POST" action="../actions/request_actions.php">
+                                <input type="hidden" name="action" value="create_request">
+                                <input type="hidden" name="file_id" id="m_file_id">
+
+                                <label>Remarks :</label>
+                                <textarea name="remarks" class="modal-textarea" placeholder="Optional remarks..."></textarea>
+
+                                <div class="modal-actions">
+                                    <button type="button" class="btn btn-secondary closeModal">Cancel</button>
+                                    <button type="submit" class="btn btn-primary">Submit Request</button>
+                                </div>
+                            </form>
+                        </div>
+                    </div>
                 </div>
 
                 <!-- Pagination Controls -->
@@ -342,6 +376,76 @@ $files = $stmt;
 }
 .page-btn:hover { background: #f3f4f6; border-color: #9ca3af; }
 .page-btn.active { background: #2563eb; color: white; border-color: #2563eb; }
+.modal-overlay{
+    position:fixed;
+    top:0;
+    left:0;
+    width:100%;
+    height:100%;
+    background:rgba(0,0,0,0.4);
+    display:none;
+    align-items:center;
+    justify-content:center;
+    z-index:999;
+}
+
+.modal-box{
+    background:#fff;
+    width:420px;
+    padding:20px;
+    border-radius:10px;
+}
+
+.modal-details p{
+    margin:4px 0;
+    font-size:0.9rem;
+}
+
+.modal-textarea{
+    width:100%;
+    padding:8px;
+    margin-top:6px;
+    border:1px solid #e5e7eb;
+    border-radius:6px;
+    min-height:70px;
+}
+
+.modal-actions{
+    margin-top:15px;
+    display:flex;
+    justify-content:flex-end;
+    gap:8px;
+}
 </style>
+
+<script>
+
+const modal = document.getElementById("requestModal");
+
+document.querySelectorAll(".openRequestModal").forEach(btn => {
+
+    btn.addEventListener("click", function(){
+
+        document.getElementById("m_file_id").value = this.dataset.fileId;
+        document.getElementById("m_file_name").textContent = this.dataset.fileName;
+        document.getElementById("m_allocation").textContent = this.dataset.allocation;
+        document.getElementById("m_box").textContent = this.dataset.box;
+        document.getElementById("m_dept").textContent = this.dataset.dept;
+
+        modal.style.display = "flex";
+
+    });
+
+});
+
+document.querySelector(".closeModal").onclick = () => modal.style.display = "none";
+
+window.onclick = function(e){
+    if(e.target === modal){
+        modal.style.display = "none";
+    }
+}
+
+</script>
 
 <?php require_once '../includes/footer.php'; ?>

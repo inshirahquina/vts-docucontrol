@@ -58,7 +58,7 @@ if(isset($_POST['add_file'])) {
             $_POST['retention'],
             'available' 
         ]);
-        header("Location: files.php?msg=added");
+        header("Location: ../admin/files.php?msg=added");
         exit;
     } catch (PDOException $e) {
         $errorMsg = $e->getMessage();
