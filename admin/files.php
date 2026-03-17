@@ -1,7 +1,6 @@
 <?php
 require_once '../config/db.php';
 require_once '../config/functions.php';
-require_once '../includes/header.php';
 
 if(!isAdmin()) redirect('../index.php');
 if (!isset($_SESSION['active_role'])) $_SESSION['active_role'] = 'admin';
@@ -44,6 +43,7 @@ $stmt->execute($params);
 $files = $stmt;
 
 if(isset($_POST['add_file'])) {
+
     $sql = "INSERT INTO files 
             (file_name, allocation, box_no, department, month_year, retention_period, status) 
             VALUES (?,?,?,?,?,?,?)";
@@ -63,10 +63,9 @@ if(isset($_POST['add_file'])) {
     } catch (PDOException $e) {
         $errorMsg = $e->getMessage();
     }
-}
 
+} elseif(isset($_POST['edit_file']) && isset($_POST['file_id'])) {
 
-if(isset($_POST['edit_file'])) {
     $sql = "UPDATE files SET 
             file_name = ?, allocation = ?, box_no = ?, 
             department = ?, month_year = ?, retention_period = ?, status = ?
@@ -88,7 +87,9 @@ if(isset($_POST['edit_file'])) {
     } catch (PDOException $e) {
         $errorMsg = $e->getMessage();
     }
+
 }
+require_once '../includes/header.php';
 ?>
 <div class="layout-wrapper">
     <?php require_once '../includes/sidebar.php'; ?>
@@ -168,7 +169,6 @@ if(isset($_POST['edit_file'])) {
                         <tbody>
                             <?php if($files->rowCount() > 0): ?>
                                 <?php while($row = $files->fetch()): 
-                                    // Comprehensive Status Config for Display
                                     $statusConfig = [
                                         'available' => ['class' => 'status-green', 'icon' => '✅'],
                                         'borrowed'  => ['class' => 'status-orange', 'icon' => '📤'],
@@ -178,7 +178,6 @@ if(isset($_POST['edit_file'])) {
                                     $stConf = $statusConfig[$row['status']] ?? ['class' => 'status-default', 'icon' => '📄'];
                                 ?>
                                 <tr>
-                                    <!-- File Info -->
                                     <td>
                                         <div class="cell-main">
                                             <span class="cell-title"><?= sanitize($row['file_name']) ?></span>
@@ -186,7 +185,6 @@ if(isset($_POST['edit_file'])) {
                                         </div>
                                     </td>
 
-                                    <!-- Location Info -->
                                     <td>
                                         <div class="cell-main">
                                             <span class="cell-text"><strong>Alloc:</strong> <?= sanitize($row['allocation']) ?></span>
@@ -194,7 +192,6 @@ if(isset($_POST['edit_file'])) {
                                         </div>
                                     </td>
 
-                                    <!-- Status -->
                                     <td>
                                         <div class="status-badge <?= $stConf['class'] ?>">
                                             <?= $stConf['icon'] ?> <?= ucfirst($row['status']) ?>
@@ -204,7 +201,6 @@ if(isset($_POST['edit_file'])) {
                                         </div>
                                     </td>
 
-                                    <!-- Actions -->
                                     <td class="action-cell">
                                         <div class="action-buttons">
                                             <a href="view_file.php?id=<?= $row['id'] ?>" class="action-btn view" title="View Details">
@@ -233,7 +229,6 @@ if(isset($_POST['edit_file'])) {
                 </div>
             </div>
             
-            <!-- Pagination -->
             <?php if ($totalPages > 1): ?>
             <?php
             $range = 10;
@@ -258,7 +253,6 @@ if(isset($_POST['edit_file'])) {
     </div>
 </div>
 
-<!-- ADD FILE MODAL -->
 <div id="addModal" class="modal-overlay">
     <div class="modal-content">
         <div class="modal-header">
@@ -364,7 +358,10 @@ if(isset($_POST['edit_file'])) {
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-secondary" onclick="closeModal('editModal')">Cancel</button>
-                <button type="submit" class="btn btn-primary">Update File</button>
+                <button type="submit" class="btn btn-primary"
+                onclick="this.disabled=true; this.form.submit();">
+                Update File
+                </button>
             </div>
         </form>
     </div>

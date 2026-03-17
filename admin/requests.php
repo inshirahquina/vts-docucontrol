@@ -208,7 +208,11 @@ require_once '../includes/header.php';
 
                                 $mins = $row['retrieval_duration'];
                                 $dueDate = $row['calculated_due_date'];
-                                $isOverdue = ($dueDate && strtotime('today') > strtotime($dueDate) && $displayStatus == 'Released');
+                                $isOverdue = (
+                                    $dueDate &&
+                                    date('Y-m-d') > date('Y-m-d', strtotime($dueDate)) &&
+                                    $displayStatus == 'Released'
+                                );
                                 
                                 $slaColor = '#10b981'; 
                                 if ($mins > 10) $slaColor = '#ef4444'; 

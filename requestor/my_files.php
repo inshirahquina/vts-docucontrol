@@ -205,7 +205,7 @@ require_once '../includes/header.php';
 
                         $releasedAt = $row['released_at'];
                         $dueDate = $row['due_date'] ?? null;
-                        $overDue = ($dueDate && strtotime(date('Y-m-d')) > strtotime($dueDate));
+                        $overDue = ($dueDate && date('Y-m-d') > date('Y-m-d', strtotime($dueDate)));
 
                         $actionBtn = false;
                         $actionType = '';
