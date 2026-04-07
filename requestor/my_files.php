@@ -205,7 +205,11 @@ require_once '../includes/header.php';
 
                         $releasedAt = $row['released_at'];
                         $dueDate = $row['due_date'] ?? null;
-                        $overDue = ($dueDate && date('Y-m-d') > date('Y-m-d', strtotime($dueDate)));
+                        $overDue = (
+                            $statusKey === 'Released' &&
+                            $dueDate &&
+                            date('Y-m-d') > date('Y-m-d', strtotime($dueDate))
+                        );
 
                         $actionBtn = false;
                         $actionType = '';
@@ -257,7 +261,14 @@ require_once '../includes/header.php';
                                             <small>(Ext. x<?= $row['extension_count'] ?>)</small>
                                         <?php endif; ?>
                                     </span>
-                                    <?= $overDue ? '<span class="overdue-alert">⚠ Overdue</span>' : '' ?>
+                                    <?= ($overDue && $statusKey === 'Released') ? '<span class="overdue-alert">⚠ Overdue</span>' : '' ?>
+                                </div>
+                                <?php endif; ?>
+
+                                <?php if($statusKey === 'Completed' && !empty($row['return_date'])): ?>
+                                <div class="time-row">
+                                    <span class="label">Returned</span>
+                                    <span class="value"><?= date('M j, Y', strtotime($row['return_date'])) ?></span>
                                 </div>
                                 <?php endif; ?>
                             </div>

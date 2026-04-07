@@ -645,8 +645,21 @@ if($role == 'admin') {
     }
 
     if($action == 'complete_transaction' && $req['current_status']=='File Restored') {
-        $pdo->prepare("UPDATE requests SET current_status='Completed', status='returned' WHERE id=?")->execute([$requestId]);
-        $pdo->prepare("UPDATE files SET status='available' WHERE id=?")->execute([$req['file_id']]);
+        $pdo->prepare("
+            UPDATE requests 
+            SET current_status='Completed',
+                status='returned',
+                return_date = COALESCE(return_date, NOW()),
+                updated_at=NOW()
+            WHERE id=?
+        ")->execute([$requestId]);
+
+        $pdo->prepare("
+            UPDATE files 
+            SET status='available' 
+            WHERE id=?
+        ")->execute([$req['file_id']]);
+
         logHistory($pdo,$requestId,$req['file_id'],'Completed',$userId);
     }
 
@@ -663,11 +676,23 @@ if(in_array($role,['staff','operations'])) {
     }
 
     if($action=='confirm_restoration' && $req['current_status']=='Restoration Assigned') {
-        $pdo->prepare("UPDATE requests SET current_status='File Restored' WHERE id=?")->execute([$requestId]);
-        $pdo->prepare("UPDATE files SET status='available' WHERE id=?")->execute([$req['file_id']]);
+        $pdo->prepare("
+            UPDATE requests 
+            SET current_status='File Restored',
+                status='returned',
+                return_date=NOW(),
+                updated_at=NOW()
+            WHERE id=?
+        ")->execute([$requestId]);
+
+        $pdo->prepare("
+            UPDATE files 
+            SET status='available' 
+            WHERE id=?
+        ")->execute([$req['file_id']]);
+
         logHistory($pdo,$requestId,$req['file_id'],'File Restored',$userId);
     }
-
 }
 if($role == 'admin'){
     header("Location: ../admin/requests.php");

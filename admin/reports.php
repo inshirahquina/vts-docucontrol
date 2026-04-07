@@ -7,7 +7,7 @@ if (!isAdmin()) {
 }
 
 // --- DATE RANGE LOGIC ---
-$default_from = date('Y-m-01'); // First day of current month
+$default_from = date('Y-m-01'); 
 $default_to = date('Y-m-d');    // Today
 
 $date_from = $_GET['date_from'] ?? $default_from;
