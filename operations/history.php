@@ -1,7 +1,6 @@
 <?php
 require_once '../config/db.php';
 require_once '../config/functions.php';
-require_once '../includes/header.php';
 
 if (!isset($_SESSION['user_id'])) {
     redirect('../auth/login.php');
@@ -157,6 +156,8 @@ $stmt->bindValue(':offset', $offset, PDO::PARAM_INT);
 
 $stmt->execute();
 $history = $stmt->fetchAll();
+
+require_once '../includes/header.php';
 ?>
 
 <div class="layout-wrapper">

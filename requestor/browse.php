@@ -25,7 +25,8 @@ $offset = ($page - 1) * $limit;
 $where = [];
 $params = [];
 
-// 1. Default Status Filter (Show ONLY available files by default)
+$where[] = "f.status != 'archived'";
+
 if (!isset($_GET['status']) || empty($_GET['status'])) {
     $where[] = "f.status = 'available'";
 }

@@ -107,6 +107,8 @@ if (isset($_GET['export'])) {
 // --- PAGINATION SETUP ---
 $perPage = 20;
 $page = isset($_GET['page']) && is_numeric($_GET['page']) ? (int)$_GET['page'] : 1;
+if ($page < 1) $page = 1;
+
 $offset = ($page - 1) * $perPage;
 
 // --- BUILD WHERE CLAUSE FOR VIEW ---
@@ -143,6 +145,14 @@ $stmtCount = $pdo->prepare($countSQL);
 $stmtCount->execute($params);
 $totalRows = $stmtCount->fetchColumn();
 $totalPages = ceil($totalRows / $perPage);
+
+if ($page > $totalPages && $totalPages > 0) {
+    $page = $totalPages;
+    $offset = ($page - 1) * $perPage;
+}
+
+$startResult = $totalRows > 0 ? $offset + 1 : 0;
+$endResult = min($offset + $perPage, $totalRows);
 
 // Fetch Data
 $sql = "SELECT fh.created_at, fh.action, fh.performed_by, fh.performed_role, f.department, f.file_name, 
@@ -319,35 +329,37 @@ require_once '../includes/header.php';
                     </table>
                 </div>
 
-                <!-- Pagination -->
+                <div class="pagination-info">
+                    Showing <?= $startResult ?> - <?= $endResult ?> of <?= $totalRows ?> results
+                </div>
+
                 <?php if ($totalPages > 1): ?>
-                <div class="pagination-bar">
-                    <div class="pagination-info">
-                        Page <?= $page ?> of <?= $totalPages ?>
-                    </div>
-                    <div class="pagination-links">
-                        <?php 
-                        $queryBase = http_build_query(array_filter($_GET, function($k) { return $k !== 'page'; }, ARRAY_FILTER_USE_KEY));
-                        ?>
-                        
-                        <?php if($page > 1): ?>
-                            <a href="?page=1&<?= $queryBase ?>" class="page-btn">«</a>
-                            <a href="?page=<?= $page-1 ?>&<?= $queryBase ?>" class="page-btn">‹</a>
-                        <?php endif; ?>
+                <div class="pagination-wrapper">
+                    <?php if ($page > 1): ?>
+                        <a class="page-btn" href="?<?= http_build_query(array_merge($_GET, ['page' => $page - 1])) ?>">
+                            ← Prev
+                        </a>
+                    <?php endif; ?>
 
-                        <?php for($i = 1; $i <= $totalPages; $i++): ?>
-                            <a href="?page=<?= $i ?>&<?= $queryBase ?>" class="page-btn <?= $i==$page ? 'active' : '' ?>"><?= $i ?></a>
-                        <?php endfor; ?>
+                    <?php
+                    $start = max(1, $page - 4);
+                    $end = min($totalPages, $start + 9);
 
-                        <?php if($page < $totalPages): ?>
-                            <a href="?page=<?= $page+1 ?>&<?= $queryBase ?>" class="page-btn">›</a>
-                            <a href="?page=<?= $totalPages ?>&<?= $queryBase ?>" class="page-btn">»</a>
-                        <?php endif; ?>
-                    </div>
+                    for ($i = $start; $i <= $end; $i++): ?>
+                        <a class="page-btn <?= $i == $page ? 'active' : '' ?>"
+                        href="?<?= http_build_query(array_merge($_GET, ['page' => $i])) ?>">
+                            <?= $i ?>
+                        </a>
+                    <?php endfor; ?>
+
+                    <?php if ($page < $totalPages): ?>
+                        <a class="page-btn" href="?<?= http_build_query(array_merge($_GET, ['page' => $page + 1])) ?>">
+                            Next →
+                        </a>
+                    <?php endif; ?>
                 </div>
                 <?php endif; ?>
             </div>
-
         </div>
     </div>
 </div>
@@ -427,11 +439,42 @@ window.addEventListener('click', function(e) {
 .empty-state p { margin: 0; color: #6b7280; font-size: 0.9rem; }
 
 /* Pagination */
-.pagination-bar { display: flex; justify-content: space-between; align-items: center; padding: 16px 20px; border-top: 1px solid #e5e7eb; background: #f9fafb; }
-.pagination-info { font-size: 0.85rem; color: #6b7280; }
-.pagination-links { display: flex; gap: 4px; }
-.page-btn { padding: 6px 12px; border: 1px solid #d1d5db; background: #fff; color: #374151; text-decoration: none; border-radius: 6px; font-size: 0.85rem; }
-.page-btn.active { background: #2563eb; color: white; border-color: #2563eb; }
+/* Pagination */
+.pagination-info{
+    text-align:center;
+    font-size:0.85rem;
+    color:#6b7280;
+    margin-top:15px;
+}
+
+.pagination-wrapper{
+    display:flex;
+    gap:6px;
+    justify-content:center;
+    padding:20px 0;
+    flex-wrap:wrap;
+}
+
+.page-btn{
+    padding: 6px 12px;
+    border: 1px solid #e5e7eb;
+    background: #fff;
+    border-radius: 6px;
+    text-decoration: none;
+    font-size: 0.85rem;
+    color: #374151;
+    transition: all 0.2s;
+}
+
+.page-btn.active{
+    background: #111827;
+    color: white;
+    border-color: #111827;
+}
+
+.page-btn:hover{
+    background: #f3f4f6;
+}
 
 .dropdown-filter { position: relative; }
 

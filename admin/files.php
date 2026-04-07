@@ -472,7 +472,7 @@ function closeModal(id) {
 
 /* Modals */
 .modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); display: none; align-items: center; justify-content: center; z-index: 1000; }
-.modal-content { background: white; border-radius: 12px; width: 100%; max-width: 550px; box-shadow: 0 20px 25px -5px rgba(0,0,0,0.1); overflow: hidden; }
+.modal-content { background: white; border-radius: 12px; width: 100%; max-width: 600px; box-shadow: 0 20px 25px -5px rgba(0,0,0,0.1); overflow: hidden; }
 .modal-header { display: flex; justify-content: space-between; align-items: center; padding: 16px 20px; border-bottom: 1px solid #e5e7eb; }
 .modal-header h2 { margin: 0; font-size: 1.1rem; color: #111827; }
 .modal-close { background: none; border: none; font-size: 1.5rem; color: #9ca3af; cursor: pointer; line-height: 1; }
@@ -484,8 +484,24 @@ function closeModal(id) {
 .form-group { display: flex; flex-direction: column; gap: 6px; }
 .form-group.full-width { grid-column: span 2; }
 .form-group label { font-size: 0.85rem; font-weight: 500; color: #374151; }
-.form-group input, .form-group select { padding: 10px 12px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 0.9rem; }
+.form-group input,
+.form-group select {
+    width: 100%;
+    box-sizing: border-box;
+}
+.form-group input,
+.form-group select {
+    padding: 10px 12px;
+    border: 1px solid #d1d5db;
+    border-radius: 6px;
+    font-size: 0.9rem;
+}
 .form-group input:focus, .form-group select:focus { border-color: #2563eb; outline: none; box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1); }
+@media (max-width: 600px) {
+    .form-grid-2 {
+        grid-template-columns: 1fr;
+    }
+}
 </style>
 
 <?php require_once '../includes/footer.php'; ?>
