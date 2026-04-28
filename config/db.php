@@ -1,6 +1,6 @@
 <?php
  $host = 'localhost';
- $db   = 'vts_doc_db';
+ $db   = 'librarydb';
  $user = 'root'; 
  $pass = '';    
  $charset = 'utf8mb4';

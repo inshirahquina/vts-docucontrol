@@ -160,97 +160,154 @@ if($role == 'requestor') {
         }
     }
 
-    # Return request
+   # Return request
     if($action == 'request_return') {
-        $stmt = $pdo->prepare("SELECT r.*, f.file_name 
-        FROM requests r
-        JOIN files f ON r.file_id = f.id
-        WHERE r.id=?");
-        $stmt->execute([$requestId]);
+
+        $stmt = $pdo->prepare("
+            SELECT 
+                r.*, 
+                f.file_name,
+                owner.full_name AS owner_name,
+                owner.department AS owner_department,
+                actor.full_name AS actor_name,
+                actor.email AS actor_email,
+                actor.department AS actor_department
+            FROM requests r
+            JOIN files f ON r.file_id = f.id
+            JOIN users owner ON r.user_id = owner.id
+            JOIN users actor ON actor.id = ?
+            WHERE r.id = ?
+        ");
+        $stmt->execute([$userId, $requestId]);
         $req = $stmt->fetch(PDO::FETCH_ASSOC);
 
-        if($req['current_status']=='Released') {
-            $pdo->prepare("UPDATE requests SET current_status='Return Requested', status='active' WHERE id=?")->execute([$requestId]);
-            logHistory($pdo,$requestId,$req['file_id'],'Return Requested',$userId);
+        if (!$req) {
+            die("Request not found.");
         }
-        $stmt = $pdo->prepare("SELECT full_name,email FROM users WHERE id=?");
-        $stmt->execute([$userId]);
-        $user = $stmt->fetch(PDO::FETCH_ASSOC);
-        $subject = "File Return Requested";
-        
-        $message = "
-        <div style='font-family:Arial, Helvetica, sans-serif; background:#f4f6f8; padding:20px;'>
 
-            <div style='max-width:600px; margin:auto; background:#ffffff; border-radius:8px; overflow:hidden; border:1px solid #e5e7eb;'>
+        // allow owner OR same department user to request return
+        $canReturn = (
+            $req['user_id'] == $userId ||
+            (
+                !empty($req['owner_department']) &&
+                !empty($req['actor_department']) &&
+                $req['owner_department'] === $req['actor_department']
+            )
+        );
 
-                <!-- Header -->
-                <div style='background:#1e293b; color:#ffffff; padding:16px 24px; font-size:18px; font-weight:bold;'>
-                    VTS e-Library System
-                </div>
+        if (!$canReturn) {
+            die("Unauthorized return request.");
+        }
 
-                <!-- Body -->
-                <div style='padding:24px; color:#334155; font-size:14px;'>
+        if($req['current_status'] == 'Released') {
 
-                    <p style='margin-top:0;'>A file return request has been submitted.</p>
+            $pdo->prepare("
+                UPDATE requests 
+                SET current_status='Return Requested', 
+                    status='active',
+                    updated_at=NOW()
+                WHERE id=?
+            ")->execute([$requestId]);
 
-                    <table style='width:100%; border-collapse:collapse; margin-top:15px;'>
+            logHistory($pdo, $requestId, $req['file_id'], 'Return Requested', $userId);
 
-                        <tr>
-                            <td style='padding:8px; background:#f8fafc; border:1px solid #e2e8f0; width:35%; font-weight:bold;'>
-                                Requester
-                            </td>
-                            <td style='padding:8px; border:1px solid #e2e8f0;'>
-                                {$user['full_name']}
-                            </td>
-                        </tr>
+            $subject = "File Return Requested";
 
-                        <tr>
-                            <td style='padding:8px; background:#f8fafc; border:1px solid #e2e8f0; font-weight:bold;'>
-                                File Name
-                            </td>
-                            <td style='padding:8px; border:1px solid #e2e8f0;'>
-                                {$req['file_name']}
-                            </td>
-                        </tr>
+            $requestedByText = $req['actor_name'];
 
-                        <tr>
-                            <td style='padding:8px; background:#f8fafc; border:1px solid #e2e8f0; font-weight:bold;'>
-                                Request ID
-                            </td>
-                            <td style='padding:8px; border:1px solid #e2e8f0;'>
-                                {$requestId}
-                            </td>
-                        </tr>
+            if ($req['user_id'] != $userId) {
+                $requestedByText .= " on behalf of " . $req['owner_name'];
+            }
 
-                    </table>
+            $message = "
+            <div style='font-family:Arial, Helvetica, sans-serif; background:#f4f6f8; padding:20px;'>
 
-                    <p style='margin-top:20px;'>
-                        Please assign restoration staff in the system to process the file return.
-                    </p>
+                <div style='max-width:600px; margin:auto; background:#ffffff; border-radius:8px; overflow:hidden; border:1px solid #e5e7eb;'>
 
-                </div>
+                    <div style='background:#1e293b; color:#ffffff; padding:16px 24px; font-size:18px; font-weight:bold;'>
+                        VTS e-Library System
+                    </div>
 
-                <!-- Footer -->
-                <div style='background:#f8fafc; padding:14px 24px; font-size:12px; color:#64748b; text-align:center;'>
-                    This is an automated message from <b>VTS e-Library System</b>.
+                    <div style='padding:24px; color:#334155; font-size:14px;'>
+
+                        <p style='margin-top:0;'>A file return request has been submitted.</p>
+
+                        <table style='width:100%; border-collapse:collapse; margin-top:15px;'>
+
+                            <tr>
+                                <td style='padding:8px; background:#f8fafc; border:1px solid #e2e8f0; width:35%; font-weight:bold;'>
+                                    Requested By
+                                </td>
+                                <td style='padding:8px; border:1px solid #e2e8f0;'>
+                                    {$requestedByText}
+                                </td>
+                            </tr>
+
+                            <tr>
+                                <td style='padding:8px; background:#f8fafc; border:1px solid #e2e8f0; font-weight:bold;'>
+                                    File Owner
+                                </td>
+                                <td style='padding:8px; border:1px solid #e2e8f0;'>
+                                    {$req['owner_name']}
+                                </td>
+                            </tr>
+
+                            <tr>
+                                <td style='padding:8px; background:#f8fafc; border:1px solid #e2e8f0; font-weight:bold;'>
+                                    Department
+                                </td>
+                                <td style='padding:8px; border:1px solid #e2e8f0;'>
+                                    {$req['owner_department']}
+                                </td>
+                            </tr>
+
+                            <tr>
+                                <td style='padding:8px; background:#f8fafc; border:1px solid #e2e8f0; font-weight:bold;'>
+                                    File Name
+                                </td>
+                                <td style='padding:8px; border:1px solid #e2e8f0;'>
+                                    {$req['file_name']}
+                                </td>
+                            </tr>
+
+                            <tr>
+                                <td style='padding:8px; background:#f8fafc; border:1px solid #e2e8f0; font-weight:bold;'>
+                                    Request ID
+                                </td>
+                                <td style='padding:8px; border:1px solid #e2e8f0;'>
+                                    {$requestId}
+                                </td>
+                            </tr>
+
+                        </table>
+
+                        <p style='margin-top:20px;'>
+                            Please assign restoration staff in the system to process the file return.
+                        </p>
+
+                    </div>
+
+                    <div style='background:#f8fafc; padding:14px 24px; font-size:12px; color:#64748b; text-align:center;'>
+                        This is an automated message from <b>VTS e-Library System</b>.
+                    </div>
+
                 </div>
 
             </div>
+            ";
 
-        </div>
-        ";
-        
-        $stmtAdmins = $pdo->prepare("
-            SELECT email 
-            FROM users 
-            WHERE role = 'operations'
-        ");
-        $stmtAdmins->execute();
+            $stmtAdmins = $pdo->prepare("
+                SELECT email 
+                FROM users 
+                WHERE role = 'operations'
+            ");
+            $stmtAdmins->execute();
 
-        $admins = $stmtAdmins->fetchAll(PDO::FETCH_ASSOC);
+            $admins = $stmtAdmins->fetchAll(PDO::FETCH_ASSOC);
 
-        foreach($admins as $admin){
-            sendEmail($admin['email'],$subject,$message);
+            foreach($admins as $admin){
+                sendEmail($admin['email'], $subject, $message);
+            }
         }
     }
 
@@ -358,8 +415,13 @@ if($role == 'requestor') {
             sendEmail($admin['email'],$subject,$message);
         }
     }
+    $redirectTo = $_POST['redirect_to'] ?? '';
 
-    header("Location: ../requestor/my_files.php");
+    if ($redirectTo === 'department_files') {
+        header("Location: ../requestor/department_files.php");
+    } else {
+        header("Location: ../requestor/my_files.php");
+    }
     exit;
 }
 
