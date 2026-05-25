@@ -1,7 +1,13 @@
 <?php
+
 require_once '../config/db.php';
 require_once '../config/functions.php';
 
+file_put_contents(
+    __DIR__ . '/cron_test.txt',
+    date('Y-m-d H:i:s') . PHP_EOL,
+    FILE_APPEND
+);
 # =================================================
 # 1. REMINDER - 1 DAY BEFORE DUE DATE
 # =================================================
@@ -12,7 +18,7 @@ FROM requests r
 JOIN users u ON r.user_id = u.id
 JOIN files f ON r.file_id = f.id
 WHERE r.current_status = 'Released'
-AND DATE(r.due_date) = DATE_ADD(CURDATE(), INTERVAL 1 DAY)
+AND DATE(r.due_date) = DATE(DATE_ADD(CURDATE(), INTERVAL 1 DAY))
 AND r.reminder_sent = 0
 ");
 

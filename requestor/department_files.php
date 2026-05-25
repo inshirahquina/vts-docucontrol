@@ -15,7 +15,9 @@ if ($base_role !== 'requestor' && $base_role !== 'hod') {
 
 $uid = $_SESSION['user_id'];
 
-// Get current user's department
+// ===============================
+// ✅ GET USER DEPARTMENT
+// ===============================
 $stmtUser = $pdo->prepare("SELECT department FROM users WHERE id = ?");
 $stmtUser->execute([$uid]);
 $currentUser = $stmtUser->fetch(PDO::FETCH_ASSOC);
@@ -26,12 +28,16 @@ if (!$userDept) {
     die("Department not assigned to your account. Please contact admin.");
 }
 
-// --- Pagination ---
+// ===============================
+// ✅ PAGINATION
+// ===============================
 $perPage = 15;
 $page    = isset($_GET['page']) && is_numeric($_GET['page']) ? intval($_GET['page']) : 1;
 $offset  = ($page - 1) * $perPage;
 
-// --- Status Configuration ---
+// ===============================
+// ✅ STATUS CONFIG
+// ===============================
 $statusConfig = [
     'Requested'            => ['📝', 'Requested', 'bg-blue-100 text-blue-800'],
     'Pending HOD Approval' => ['⏳', 'Pending HOD', 'bg-amber-100 text-amber-800'],
@@ -47,20 +53,25 @@ $statusConfig = [
     'Cancelled'            => ['🚫', 'Cancelled', 'bg-red-100 text-red-800']
 ];
 
-// --- Filters & Search ---
+// ===============================
+// ✅ FILTERS
+// ===============================
 $searchTerm = $_GET['search'] ?? '';
-$searchSQL = $searchTerm ? " AND (f.file_name LIKE :s OR f.allocation LIKE :s OR u.full_name LIKE :s)" : "";
 
-$statusFilter = $_GET['statuses'] ?? [];
-$statusFilter = array_filter($statusFilter); // remove empty value
+$searchSQL = $searchTerm 
+    ? " AND (f.file_name LIKE :s1 OR f.allocation LIKE :s2 OR u.full_name LIKE :s3)" 
+    : "";
+
+// FIX index
+$statusFilter = array_values(array_filter($_GET['statuses'] ?? []));
 
 $statusSQL = "";
 $currentPlaceholders = [];
 $extensionPlaceholders = [];
 
-if (!empty($statusFilter) && is_array($statusFilter)) {
+if (!empty($statusFilter)) {
     foreach ($statusFilter as $k => $s) {
-        $currentPlaceholders[] = ":status_current_" . $k;
+        $currentPlaceholders[]   = ":status_current_" . $k;
         $extensionPlaceholders[] = ":status_ext_" . $k;
     }
 
@@ -73,7 +84,9 @@ if (!empty($statusFilter) && is_array($statusFilter)) {
     )";
 }
 
-// --- Count total rows ---
+// ===============================
+// ✅ COUNT QUERY
+// ===============================
 $countSQL = "
     SELECT COUNT(*)
     FROM requests r
@@ -87,10 +100,14 @@ $countSQL = "
 $stmtCount = $pdo->prepare($countSQL);
 $stmtCount->bindValue(':department', $userDept);
 
+// FIX search binding
 if ($searchTerm) {
-    $stmtCount->bindValue(':s', "%$searchTerm%");
+    $stmtCount->bindValue(':s1', "%$searchTerm%");
+    $stmtCount->bindValue(':s2', "%$searchTerm%");
+    $stmtCount->bindValue(':s3', "%$searchTerm%");
 }
 
+// FIX status binding
 if (!empty($statusFilter)) {
     foreach ($statusFilter as $k => $s) {
         $stmtCount->bindValue(":status_current_" . $k, $s);
@@ -102,7 +119,9 @@ $stmtCount->execute();
 $totalRows = $stmtCount->fetchColumn();
 $totalPages = ceil($totalRows / $perPage);
 
-// --- Main Query ---
+// ===============================
+// ✅ MAIN QUERY
+// ===============================
 $sql = "
     SELECT 
         r.*,
@@ -147,10 +166,14 @@ $sql = "
 $stmt = $pdo->prepare($sql);
 $stmt->bindValue(':department', $userDept);
 
+// FIX search binding
 if ($searchTerm) {
-    $stmt->bindValue(':s', "%$searchTerm%");
+    $stmt->bindValue(':s1', "%$searchTerm%");
+    $stmt->bindValue(':s2', "%$searchTerm%");
+    $stmt->bindValue(':s3', "%$searchTerm%");
 }
 
+// FIX status binding
 if (!empty($statusFilter)) {
     foreach ($statusFilter as $k => $s) {
         $stmt->bindValue(":status_current_" . $k, $s);

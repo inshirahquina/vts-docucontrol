@@ -38,7 +38,7 @@ if($role == 'requestor') {
         $file = $stmtFile->fetch(PDO::FETCH_ASSOC);
 
         $file_name = $file['file_name'];
-        // Set status to Pending HOD Approval
+
         $pdo->prepare("
             INSERT INTO requests
             (file_id,user_id,current_status,status,borrow_date,extension_count,remarks)
@@ -152,13 +152,40 @@ if($role == 'requestor') {
         $stmt->execute([$requestId]);
         $req = $stmt->fetch(PDO::FETCH_ASSOC);
 
-        // Allow cancel if Requested or Pending HOD
-        if(in_array($req['current_status'], ['Requested', 'Pending HOD Approval'])) {
-            $pdo->prepare("UPDATE requests SET current_status='Cancelled', status='rejected' WHERE id=?")->execute([$requestId]);
-            $pdo->prepare("UPDATE files SET status='available' WHERE id=?")->execute([$req['file_id']]);
+       if(in_array($req['current_status'], ['Requested', 'Pending HOD Approval'])) {
+
+        if($req['status'] == 'extension_requested') {
+
+            $pdo->prepare("
+                UPDATE requests 
+                SET current_status='Released',
+                    status='active'
+                WHERE id=?
+            ")->execute([$requestId]);
+
+            logHistory($pdo,$requestId,$req['file_id'],'Extension Cancelled (Reverted to Released)',$userId);
+
+        } 
+
+        else {
+
+            $pdo->prepare("
+                UPDATE requests 
+                SET current_status='Cancelled', 
+                    status='rejected' 
+                WHERE id=?
+            ")->execute([$requestId]);
+
+            $pdo->prepare("
+                UPDATE files 
+                SET status='available' 
+                WHERE id=?
+            ")->execute([$req['file_id']]);
+
             logHistory($pdo,$requestId,$req['file_id'],'Cancelled',$userId);
         }
     }
+}
 
    # Return request
     if($action == 'request_return') {

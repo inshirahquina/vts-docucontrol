@@ -7,6 +7,7 @@ require_once '../config/db.php';
 require_once '../config/functions.php';
 
 if (!isset($_SESSION['user_id'])) redirect('../auth/login.php');
+
 $base_role = $_SESSION['role'] ?? '';
 if ($base_role !== 'requestor' && $base_role !== 'hod') {
     redirect('../index.php');
@@ -14,27 +15,48 @@ if ($base_role !== 'requestor' && $base_role !== 'hod') {
 
 $uid = $_SESSION['user_id'];
 
-// --- Pagination ---
+// ===============================
+// ✅ PAGINATION
+// ===============================
 $perPage = 15;
-$page    = isset($_GET['page']) && is_numeric($_GET['page']) ? intval($_GET['page']) : 1;
+$page    = (isset($_GET['page']) && is_numeric($_GET['page'])) ? intval($_GET['page']) : 1;
 $offset  = ($page - 1) * $perPage;
 
-// --- Filters & Search ---
+// ===============================
+// ✅ SEARCH
+// ===============================
 $searchTerm = $_GET['search'] ?? '';
-// Updated search SQL to use allocation instead of barcode
-$searchSQL = $searchTerm ? " AND (f.file_name LIKE :s OR f.allocation LIKE :s OR f.department LIKE :s)" : "";
+$searchSQL  = '';
 
-$statusFilter = $_GET['statuses'] ?? [];
-$statusSQL = "";
-if (!empty($statusFilter) && is_array($statusFilter)) {
+if (!empty($searchTerm)) {
+    $searchSQL = " 
+        AND (
+            f.file_name LIKE :s1 
+            OR f.allocation LIKE :s2 
+            OR f.department LIKE :s3
+        )
+    ";
+}
+
+// ===============================
+// ✅ STATUS FILTER
+// ===============================
+$statusFilter = array_values(array_filter($_GET['statuses'] ?? []));
+$statusSQL    = '';
+
+if (!empty($statusFilter)) {
     $placeholders = [];
+
     foreach ($statusFilter as $k => $s) {
         $placeholders[] = ":status_" . $k;
     }
+
     $statusSQL = " AND r.current_status IN (" . implode(',', $placeholders) . ")";
 }
 
-// --- Status Configuration ---
+// ===============================
+// ✅ STATUS CONFIG
+// ===============================
 $statusConfig = [
     'Requested'            => ['📝', 'Requested', 'bg-blue-100 text-blue-800', 'Requested'],
     'Pending HOD Approval' => ['⏳', 'Pending HOD', 'bg-amber-100 text-amber-800', 'Requested'],
@@ -49,36 +71,61 @@ $statusConfig = [
     'Cancelled'            => ['🚫', 'Cancelled', 'bg-red-100 text-red-800', 'Cancelled']
 ];
 
-$filterGroups = [
-    'Processing' => ['Retrieval Assigned', 'File Retrieved'],
-    'Returning'  => ['Return Requested', 'Restoration Assigned', 'File Restored']
-];
+// ===============================
+// ✅ COUNT QUERY
+// ===============================
+$countSQL = "
+    SELECT COUNT(*) 
+    FROM requests r
+    JOIN files f ON r.file_id = f.id
+    WHERE r.user_id = :uid
+    $searchSQL
+    $statusSQL
+";
 
-// --- Count total rows ---
-$countSQL = "SELECT COUNT(*) FROM requests r JOIN files f ON r.file_id=f.id WHERE r.user_id=:uid $searchSQL $statusSQL";
 $stmtCount = $pdo->prepare($countSQL);
 $stmtCount->bindValue(':uid', $uid);
-if ($searchTerm) $stmtCount->bindValue(':s', "%$searchTerm%");
-if (!empty($statusFilter)) {
-    foreach ($statusFilter as $k => $s) $stmtCount->bindValue(":status_" . $k, $s);
+
+// search binding
+if (!empty($searchTerm)) {
+    $stmtCount->bindValue(':s1', "%$searchTerm%");
+    $stmtCount->bindValue(':s2', "%$searchTerm%");
+    $stmtCount->bindValue(':s3', "%$searchTerm%");
 }
+
+// status binding
+if (!empty($statusFilter)) {
+    foreach ($statusFilter as $k => $s) {
+        $stmtCount->bindValue(":status_" . $k, $s);
+    }
+}
+
 $stmtCount->execute();
-$totalRows = $stmtCount->fetchColumn();
+$totalRows  = $stmtCount->fetchColumn();
 $totalPages = ceil($totalRows / $perPage);
 
-// --- MAIN QUERY ---
-
-$sql = "SELECT r.*, f.file_name, f.allocation, f.box_no, f.department,
+// ===============================
+// ✅ MAIN QUERY
+// ===============================
+$sql = "
+    SELECT 
+        r.*,
+        f.file_name,
+        f.allocation,
+        f.box_no,
+        f.department,
         GREATEST(
-            COALESCE(r.updated_at, '1970-01-01'), 
-            COALESCE(r.released_at, '1970-01-01'), 
-            COALESCE(r.retrieved_at, '1970-01-01'), 
+            COALESCE(r.updated_at, '1970-01-01'),
+            COALESCE(r.released_at, '1970-01-01'),
+            COALESCE(r.retrieved_at, '1970-01-01'),
             COALESCE(r.borrow_date, '1970-01-01')
-        ) as last_activity
-        FROM requests r 
-        JOIN files f ON r.file_id=f.id 
-        WHERE r.user_id=:uid $searchSQL $statusSQL 
-        ORDER BY 
+        ) AS last_activity
+    FROM requests r
+    JOIN files f ON r.file_id = f.id
+    WHERE r.user_id = :uid
+    $searchSQL
+    $statusSQL
+    ORDER BY 
         CASE 
             WHEN r.current_status = 'Requested' THEN 1
             WHEN r.current_status = 'Pending HOD Approval' THEN 2
@@ -90,15 +137,27 @@ $sql = "SELECT r.*, f.file_name, f.allocation, f.box_no, f.department,
             ELSE 8
         END,
         last_activity DESC
-        LIMIT $perPage OFFSET $offset";
+    LIMIT $perPage OFFSET $offset
+";
 
-$stmt = $pdo->prepare($sql); 
-$stmt->bindValue(':uid', $uid); 
-if ($searchTerm) $stmt->bindValue(':s', "%$searchTerm%");
-if (!empty($statusFilter)) { 
-    foreach ($statusFilter as $k => $s) $stmt->bindValue(":status_" . $k, $s); 
-} 
-$stmt->execute(); 
+$stmt = $pdo->prepare($sql);
+$stmt->bindValue(':uid', $uid);
+
+// search binding
+if (!empty($searchTerm)) {
+    $stmt->bindValue(':s1', "%$searchTerm%");
+    $stmt->bindValue(':s2', "%$searchTerm%");
+    $stmt->bindValue(':s3', "%$searchTerm%");
+}
+
+// status binding
+if (!empty($statusFilter)) {
+    foreach ($statusFilter as $k => $s) {
+        $stmt->bindValue(":status_" . $k, $s);
+    }
+}
+
+$stmt->execute();
 $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
 require_once '../includes/header.php';
@@ -199,100 +258,153 @@ require_once '../includes/header.php';
             <div class="files-list-container">
                 <?php if($rows): ?>
                     <?php foreach($rows as $row):
-                        $statusKey = $row['current_status'] ?: 'Cancelled';
-                        if(!isset($statusConfig[$statusKey])) $statusKey='Cancelled';
-                        [$icon, $label, $classes, $group] = $statusConfig[$statusKey];
 
-                        $releasedAt = $row['released_at'];
-                        $dueDate = $row['due_date'] ?? null;
-                        $overDue = (
-                            $statusKey === 'Released' &&
-                            $dueDate &&
-                            date('Y-m-d') > date('Y-m-d', strtotime($dueDate))
-                        );
+                    // ===============================
+                    // ✅ STATUS
+                    // ===============================
+                    $statusKey = $row['current_status'] ?: 'Cancelled';
 
-                        $actionBtn = false;
-                        $actionType = '';
-                        $showExtend = false;
+                    if ($row['status'] === 'extension_requested') {
+                        $statusKey = 'Extension Requested';
+                    }
+                    if (!isset($statusConfig[$statusKey])) {
+                        $statusKey = 'Cancelled';
+                    }
 
-                        if($statusKey==='Released') {
-                            $actionBtn = true;
-                            $actionType = 'return';
-                            $showExtend = (!$overDue && $row['extension_count'] < 2);
-                        }
-                        if(in_array($statusKey, ['Requested', 'Pending HOD Approval'])) {
-                            $actionBtn = true;
-                            $actionType = 'cancel';
-                        }
-                    ?>
-                    
+                    [$icon, $label, $classes, $group] = $statusConfig[$statusKey];
+
+                    // ===============================
+                    // ✅ DATA
+                    // ===============================
+                    $releasedAt   = $row['released_at'];
+                    $dueDate      = $row['due_date'] ?? null;
+                    $hasExtension = !empty($row['extension_count']) && $row['extension_count'] > 0;
+
+                    $extensionCancelled = (
+                        $row['status'] === 'active' &&
+                        $row['current_status'] === 'Released' &&
+                        $row['extension_count'] > 0 &&
+                        empty($row['extension_requested_at'])
+                    );
+                    // ===============================
+                    // ✅ OVERDUE
+                    // ===============================
+                    $overDue = (
+                        $statusKey === 'Released' &&
+                        !empty($dueDate) &&
+                        date('Y-m-d') > date('Y-m-d', strtotime($dueDate))
+                    );
+
+                    // ===============================
+                    // ✅ ACTION BUTTONS
+                    // ===============================
+                    $actionBtn  = false;
+                    $actionType = '';
+                    $showExtend = false;
+
+                    if ($statusKey === 'Released') {
+                        $actionBtn  = true;
+                        $actionType = 'return';
+                        $showExtend = (!$overDue && $row['extension_count'] < 2);
+                    }
+
+                    if (in_array($statusKey, ['Requested', 'Pending HOD Approval'])) {
+                        $actionBtn  = true;
+                        $actionType = 'cancel';
+                    }
+                ?>
                     <div class="file-card <?= $overDue ? 'is-overdue' : '' ?>">
                         <div class="card-main">
+
+                            <!-- LEFT -->
                             <div class="file-identity">
                                 <h4 class="file-title"><?= sanitize($row['file_name']) ?></h4>
-                                    <?php if(!empty($row['remarks'])): ?>
+
+                                <?php if(!empty($row['remarks'])): ?>
                                     <div class="file-remark">
                                         📝 <?= sanitize($row['remarks']) ?>
                                     </div>
-                                    <?php endif; ?>
+                                <?php endif; ?>
 
-                                    <div class="file-meta-badges">
+                                <div class="file-meta-badges">
                                     <span class="meta-badge dark"><?= sanitize($row['allocation']) ?></span>
                                     <span class="meta-badge gray"><?= sanitize($row['department']) ?></span>
                                 </div>
                             </div>
 
+                            <!-- TIMELINE -->
                             <div class="file-timeline">
                                 <div class="time-row">
                                     <span class="label">Requested</span>
                                     <span class="value"><?= date('M j, Y', strtotime($row['borrow_date'])) ?></span>
                                 </div>
-                                
-                                <?php if($releasedAt): ?>
-                                <div class="time-row">
-                                    <span class="label">Released</span>
-                                    <span class="value"><?= date('M j, Y', strtotime($releasedAt)) ?></span>
-                                </div>
-                                <div class="time-row <?= $overDue ? 'danger' : '' ?>">
-                                    <span class="label">Due Date</span>
-                                    <span class="value bold">
-                                        <?= date('M j, Y', strtotime($dueDate)) ?>
-                                        <?php if($row['extension_count'] > 0): ?>
-                                            <small>(Ext. x<?= $row['extension_count'] ?>)</small>
-                                        <?php endif; ?>
-                                    </span>
-                                    <?= ($overDue && $statusKey === 'Released') ? '<span class="overdue-alert">⚠ Overdue</span>' : '' ?>
-                                </div>
+
+                                <?php if($releasedAt || $dueDate || $row['extension_count'] > 0): ?>
+
+                                    <div class="time-row <?= $overDue ? 'danger' : '' ?>">
+                                        <span class="label">Due Date</span>
+                                        <span class="value bold">
+                                            <?= !empty($row['return_date']) 
+                                            ? date('M j, Y', strtotime($row['return_date'])) 
+                                            : '--' ?>
+
+                                            <?php if($hasExtension): ?>
+                                                <small>(Ext. x<?= $row['extension_count'] ?>)</small>
+                                            <?php endif; ?>
+                                        </span>
+
+                                        <?= ($overDue && $statusKey === 'Released') 
+                                            ? '<span class="overdue-alert">⚠ Overdue</span>' 
+                                            : '' ?>
+                                    </div>
                                 <?php endif; ?>
 
                                 <?php if($statusKey === 'Completed' && !empty($row['return_date'])): ?>
-                                <div class="time-row">
-                                    <span class="label">Returned</span>
-                                    <span class="value"><?= date('M j, Y', strtotime($row['return_date'])) ?></span>
-                                </div>
+                                    <div class="time-row">
+                                        <span class="label">Returned</span>
+                                        <span class="value"><?= !empty($row['return_date']) 
+                                        ? date('M j, Y', strtotime($row['return_date'])) 
+                                        : '--' ?></span>
+                                    </div>
                                 <?php endif; ?>
                             </div>
                         </div>
 
+                        <!-- RIGHT -->
                         <div class="card-status-actions">
                             <div class="status-wrapper">
+                                <?php if($row['extension_count'] > 0): ?>
+                                    <div class="file-remark" style="font-size:0.75rem; color:#6b7280;">
+                                        Extension x<?= $row['extension_count'] ?>
+                                    </div>
+                                <?php endif; ?>
+
                                 <span class="modern-badge <?= $classes ?>">
                                     <?= $icon ?> <?= $label ?>
                                 </span>
+
+                                <?php if($extensionCancelled): ?>
+                                    <div class="file-remark" style="color:#b45309; font-weight:600;">
+                                        ⚠ Extension Cancelled
+                                    </div>
+                                <?php endif; ?>
+
                             </div>
 
                             <div class="action-buttons">
+
                                 <?php if($actionBtn): ?>
-                                    <?php if($actionType==='return'): ?>
-                                        <form method="POST" action="../actions/request_actions.php" onsubmit="return confirm('Confirm return request?');" style="display:inline;">
+
+                                    <?php if($actionType === 'return'): ?>
+                                        <form method="POST" action="../actions/request_actions.php" onsubmit="return confirm('Confirm return request?');">
                                             <input type="hidden" name="request_id" value="<?= $row['id'] ?>">
                                             <input type="hidden" name="action" value="request_return">
                                             <button class="btn-sm primary">Return File</button>
                                         </form>
                                     <?php endif; ?>
-                                    
-                                    <?php if($actionType==='cancel'): ?>
-                                        <form method="POST" action="../actions/request_actions.php" onsubmit="return confirm('Cancel this request?');" style="display:inline;">
+
+                                    <?php if($actionType === 'cancel'): ?>
+                                        <form method="POST" action="../actions/request_actions.php" onsubmit="return confirm('Cancel this request?');">
                                             <input type="hidden" name="request_id" value="<?= $row['id'] ?>">
                                             <input type="hidden" name="action" value="cancel_request">
                                             <button class="btn-sm danger-outline">Cancel Request</button>
@@ -300,13 +412,15 @@ require_once '../includes/header.php';
                                     <?php endif; ?>
 
                                     <?php if($showExtend): ?>
-                                        <form method="POST" action="../actions/request_actions.php" onsubmit="return confirm('Request 3-day extension?');" style="display:inline;">
+                                        <form method="POST" action="../actions/request_actions.php" onsubmit="return confirm('Request 3-day extension?');">
                                             <input type="hidden" name="request_id" value="<?= $row['id'] ?>">
                                             <input type="hidden" name="action" value="request_extension">
                                             <button class="btn-sm warning-outline">Extend</button>
                                         </form>
                                     <?php endif; ?>
+
                                 <?php endif; ?>
+
                             </div>
                         </div>
                     </div>

@@ -178,7 +178,7 @@ function sendEmail($to,$subject,$body){
 
         $mail->SMTPAuth = true;
         $mail->Username = 'elibrary@vtsgroup.com.my';
-        $mail->Password = '3Lry@vTs*!';
+        // $mail->Password = '(mail password)';
 
         $mail->SMTPSecure = 'ssl';
         $mail->Port = 465;
