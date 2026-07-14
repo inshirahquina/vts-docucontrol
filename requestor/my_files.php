@@ -316,6 +316,15 @@ require_once '../includes/header.php';
                     <div class="file-card <?= $overDue ? 'is-overdue' : '' ?>">
                         <div class="card-main">
 
+                        <?php if($statusKey === 'Released'): ?>
+                            <label class="select-file">
+                                <input
+                                    type="checkbox"
+                                    class="return-checkbox"
+                                    value="<?= $row['id'] ?>">
+                            </label>
+                            <?php endif; ?>
+
                             <!-- LEFT -->
                             <div class="file-identity">
                                 <h4 class="file-title"><?= sanitize($row['file_name']) ?></h4>
@@ -434,7 +443,23 @@ require_once '../includes/header.php';
                     </div>
                 <?php endif; ?>
             </div>
+            <form
+                id="bulkReturnForm"
+                method="POST"
+                action="../actions/request_actions.php"
+                style="display:none;margin-top:20px;"
+                onsubmit="return confirm('Return selected files?');">
 
+                <input type="hidden" name="action" value="bulk_request_return">
+
+                <div id="selectedInputs"></div>
+
+                <button class="btn-sm primary">
+                    Return Selected Files
+                </button>
+
+            </form>
+            
             <!-- Pagination -->
             <?php if($totalPages > 1): ?>
             <div class="pagination-wrapper">
@@ -560,6 +585,18 @@ require_once '../includes/header.php';
     margin-bottom:6px;
     font-style:italic;
 }
+.select-file{
+    display:flex;
+    align-items:flex-start;
+    margin-right:16px;
+    padding-top:4px;
+}
+
+.return-checkbox{
+    width:18px;
+    height:18px;
+    cursor:pointer;
+}
 
 @media (max-width: 768px) {
     .file-card { flex-direction: column; align-items: flex-start; gap: 16px; }
@@ -620,6 +657,42 @@ document.addEventListener('DOMContentLoaded', () => {
         document.querySelector("button[onclick*='Returning']")?.classList.add('active');
     }
 });
+const returnCheckboxes =
+    document.querySelectorAll('.return-checkbox');
+
+const bulkForm =
+    document.getElementById('bulkReturnForm');
+
+const selectedInputs =
+    document.getElementById('selectedInputs');
+
+returnCheckboxes.forEach(cb => {
+
+    cb.addEventListener('change', updateBulkReturn);
+
+});
+
+function updateBulkReturn(){
+
+    selectedInputs.innerHTML='';
+
+    const checked =
+        document.querySelectorAll('.return-checkbox:checked');
+
+    checked.forEach(item=>{
+
+        selectedInputs.innerHTML += `
+            <input
+                type="hidden"
+                name="request_ids[]"
+                value="${item.value}">
+        `;
+
+    });
+
+    bulkForm.style.display =
+        checked.length ? 'block' : 'none';
+}
 </script>
 
 <?php require_once '../includes/footer.php'; ?>

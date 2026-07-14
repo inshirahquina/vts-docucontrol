@@ -29,6 +29,72 @@ function logHistory($pdo,$rid,$fid,$action,$user){
 # REQUESTOR ACTIONS
 # ===============================
 if($role == 'requestor') {
+    if($action == 'create_multiple_request') {
+
+        $remarks = $_POST['remarks'] ?? '';
+        $files = json_decode($_POST['selected_files'], true);
+
+        if(empty($files)){
+            header("Location: ../requestor/browse.php");
+            exit;
+        }
+
+        foreach($files as $item){
+
+            $fileId = $item['id'];
+
+            $stmtFile = $pdo->prepare("
+                SELECT file_name
+                FROM files
+                WHERE id=?
+            ");
+            $stmtFile->execute([$fileId]);
+
+            $file = $stmtFile->fetch(PDO::FETCH_ASSOC);
+
+            $file_name = $file['file_name'];
+
+            $pdo->prepare("
+            INSERT INTO requests
+            (file_id,user_id,current_status,status,borrow_date,extension_count,remarks)
+            VALUES(?,?,'Pending HOD Approval','pending_hod',NOW(),0,?)
+        ")->execute([$fileId,$userId,$remarks]);
+
+        $requestId = $pdo->lastInsertId();
+
+        $pdo->prepare("
+            UPDATE files
+            SET status='requested'
+            WHERE id=?
+        ")->execute([$fileId]);
+
+        logHistory(
+            $pdo,
+            $requestId,
+            $fileId,
+            'Requested (Pending HOD)',
+            $userId
+        );
+
+        }
+
+        $stmt = $pdo->prepare("
+            SELECT full_name,email
+            FROM users
+            WHERE id=?
+        ");
+        $stmt->execute([$userId]);
+
+        $user = $stmt->fetch(PDO::FETCH_ASSOC);
+
+        $subject = "New File Requests Submitted";
+        $count = count($files);
+
+        $_SESSION['success'] = "$count requests submitted successfully.";
+
+        header("Location: ../requestor/browse.php");
+        exit;
+    }
 
     # Borrow file - Redirect to HOD first
     if($action == 'create_request') {

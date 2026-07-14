@@ -12,6 +12,15 @@ if ($base_role !== 'requestor' && $base_role !== 'hod') {
 
 $current_page = basename($_SERVER['PHP_SELF']);
 
+if (!isLoggedIn()) redirect('../index.php');
+
+$base_role = $_SESSION['role'] ?? '';
+if ($base_role !== 'requestor' && $base_role !== 'hod') {
+    redirect('../index.php');
+}
+
+$current_page = basename($_SERVER['PHP_SELF']);
+
 // --- DYNAMIC FILTER DATA ---
 $deptStmt = $pdo->query("SELECT DISTINCT department FROM files ORDER BY department ASC");
 $departments = $deptStmt->fetchAll(PDO::FETCH_COLUMN);
@@ -130,6 +139,68 @@ $files = $stmt;
                 </form>
             </div>
 
+            <div class="content-area">
+
+                <?php if(isset($_SESSION['success'])): ?>
+
+                    <div class="alert-success">
+                        <?= $_SESSION['success']; ?>
+                    </div>
+
+                <?php unset($_SESSION['success']); ?>
+
+                <?php endif; ?>
+
+        <div class="card request-card">
+
+            <h3>
+                Request List
+                (<span id="requestCount">0</span>)
+            </h3>
+
+            <ul id="requestList"></ul>
+
+            <form id="multiRequestForm"
+                method="POST"
+                action="../actions/request_actions.php">
+
+                <input type="hidden"
+                    name="action"
+                    value="create_multiple_request">
+
+                <input type="hidden"
+                    id="selected_files"
+                    name="selected_files">
+
+                <div class="request-actions">
+
+                    <div class="remarks-group">
+
+                        <label for="remarks">
+                            Remarks (Optional)
+                        </label>
+
+                        <textarea
+                            id="remarks"
+                            name="remarks"
+                            placeholder="Enter remarks..."></textarea>
+
+                    </div>
+
+                    <button
+                        type="submit"
+                        class="btn btn-primary submit-btn">
+
+                        Submit Requests
+
+                    </button>
+
+                </div>
+
+            </form>
+
+        </div>
+
             <!-- Data Table Card -->
             <div class="card table-card">
                 <div class="table-responsive">
@@ -185,25 +256,28 @@ $files = $stmt;
 
                                     <!-- Action -->
                                     <td class="action-cell">
-                                        <?php if($row['status'] == 'available'): ?>
-                                            <form method="POST" action="../actions/request_actions.php" style="display:inline;">
-                                                <input type="hidden" name="action" value="create_request">
-                                                <input type="hidden" name="file_id" value="<?= $row['id'] ?>">
-                                                <button 
-                                                    type="button" 
-                                                    class="btn btn-sm primary openRequestModal"
-                                                    data-file-id="<?= $row['id'] ?>"
-                                                    data-file-name="<?= htmlspecialchars($row['file_name']) ?>"
-                                                    data-allocation="<?= htmlspecialchars($row['allocation']) ?>"
-                                                    data-box="<?= htmlspecialchars($row['box_no']) ?>"
-                                                    data-dept="<?= htmlspecialchars($row['department']) ?>"
-                                                    >
-                                                    Request
-                                                </button>
-                                            </form>
-                                        <?php else: ?>
-                                            <span class="disabled-text">Unavailable</span>
-                                        <?php endif; ?>
+
+                                    <?php if($row['status']=='available'): ?>
+
+                                    <button
+                                    type="button"
+                                    class="btn btn-sm primary addRequest"
+                                    data-id="<?= $row['id'] ?>"
+                                    data-name="<?= htmlspecialchars($row['file_name']) ?>"
+                                    >
+
+                                    + Add
+
+                                    </button>
+
+                                    <?php else: ?>
+
+                                    <span class="disabled-text">
+                                    Unavailable
+                                    </span>
+
+                                    <?php endif; ?>
+
                                     </td>
                                 </tr>
                                 <?php endwhile; ?>
@@ -219,33 +293,6 @@ $files = $stmt;
                             <?php endif; ?>
                         </tbody>
                     </table>
-                    <div id="requestModal" class="modal-overlay">
-                        <div class="modal-box">
-                            <h3>Request File</h3>
-
-                            <div class="modal-details">
-                                <p><strong>File:</strong> <span id="m_file_name"></span></p>
-                                <p><strong>Allocation:</strong> <span id="m_allocation"></span></p>
-                                <p><strong>Box:</strong> <span id="m_box"></span></p>
-                                <p><strong>Department:</strong> <span id="m_dept"></span></p>
-                            </div>
-
-                            <br>
-
-                            <form method="POST" action="../actions/request_actions.php">
-                                <input type="hidden" name="action" value="create_request">
-                                <input type="hidden" name="file_id" id="m_file_id">
-
-                                <label>Remarks :</label>
-                                <textarea name="remarks" class="modal-textarea" placeholder="Optional remarks..."></textarea>
-
-                                <div class="modal-actions">
-                                    <button type="button" class="btn btn-secondary closeModal">Cancel</button>
-                                    <button type="submit" class="btn btn-primary">Submit Request</button>
-                                </div>
-                            </form>
-                        </div>
-                    </div>
                 </div>
 
                 <!-- Pagination Controls -->
@@ -306,7 +353,7 @@ $files = $stmt;
 .table-card { overflow: hidden; }
 
 /* Filter Bar */
-.filter-bar-card { padding: 16px 20px; margin-bottom: 16px; }
+.filter-bar-card { padding: 16px 20px;}
 .filter-form-inline { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
 
 .search-box-modern { position: relative; flex: 1; min-width: 250px; }
@@ -352,6 +399,89 @@ $files = $stmt;
 .btn-dark { background: #1f2937; color: white; }
 .btn-dark:hover { background: #111827; }
 
+.alert-success{
+    background:#dcfce7;
+    color:#166534;
+    border:1px solid #86efac;
+    padding:12px 16px;
+    border-radius:8px;
+    margin-bottom:20px;
+    font-weight:600;
+}
+
+.request-actions{
+    display:flex;
+    gap:20px;
+    align-items:flex-end;
+    margin-top:20px;
+    flex-wrap:wrap;
+}
+
+.remarks-group{
+    flex:1;
+}
+
+.remarks-group label{
+    display:block;
+    margin-bottom:8px;
+    font-weight:600;
+    color:#374151;
+}
+
+.remarks-group textarea{
+    width:100%;
+    min-height:90px;
+    padding:12px;
+    border:1px solid #d1d5db;
+    border-radius:8px;
+    resize:vertical;
+    box-sizing:border-box;
+    font-size:14px;
+}
+
+.remarks-group textarea:focus{
+    outline:none;
+    border-color:#2563eb;
+    box-shadow:0 0 0 3px rgba(37,99,235,.12);
+}
+
+.submit-btn{
+    height:46px;
+    padding:0 28px;
+    white-space:nowrap;
+}
+
+.request-card{
+    padding:20px;
+    margin-bottom:20px;
+}
+
+#requestList{
+    list-style:none;
+    padding:0;
+    margin:15px 0;
+}
+
+.request-item{
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    padding:10px 12px;
+    background:#f9fafb;
+    border:1px solid #e5e7eb;
+    border-radius:8px;
+    margin-bottom:8px;
+}
+
+.btn-remove{
+    border:none;
+    background:#ef4444;
+    color:white;
+    border-radius:6px;
+    padding:5px 10px;
+    cursor:pointer;
+}
+
 /* Pagination Styles */
 .pagination-bar {
     display: flex;
@@ -377,75 +507,134 @@ $files = $stmt;
 }
 .page-btn:hover { background: #f3f4f6; border-color: #9ca3af; }
 .page-btn.active { background: #2563eb; color: white; border-color: #2563eb; }
-.modal-overlay{
-    position:fixed;
-    top:0;
-    left:0;
-    width:100%;
-    height:100%;
-    background:rgba(0,0,0,0.4);
-    display:none;
-    align-items:center;
-    justify-content:center;
-    z-index:999;
-}
-
-.modal-box{
-    background:#fff;
-    width:420px;
-    padding:20px;
-    border-radius:10px;
-}
-
-.modal-details p{
-    margin:4px 0;
-    font-size:0.9rem;
-}
-
-.modal-textarea{
-    width:100%;
-    padding:8px;
-    margin-top:6px;
-    border:1px solid #e5e7eb;
-    border-radius:6px;
-    min-height:70px;
-}
-
-.modal-actions{
-    margin-top:15px;
-    display:flex;
-    justify-content:flex-end;
-    gap:8px;
-}
 </style>
 
 <script>
+let requestList = JSON.parse(localStorage.getItem("requestList")) || [];
+document.getElementById("multiRequestForm")
+.addEventListener("submit", function(e){
 
-const modal = document.getElementById("requestModal");
+    if(requestList.length === 0){
+        e.preventDefault();
+        alert("Please select at least one file.");
+        return;
+    }
 
-document.querySelectorAll(".openRequestModal").forEach(btn => {
-
-    btn.addEventListener("click", function(){
-
-        document.getElementById("m_file_id").value = this.dataset.fileId;
-        document.getElementById("m_file_name").textContent = this.dataset.fileName;
-        document.getElementById("m_allocation").textContent = this.dataset.allocation;
-        document.getElementById("m_box").textContent = this.dataset.box;
-        document.getElementById("m_dept").textContent = this.dataset.dept;
-
-        modal.style.display = "flex";
-
-    });
+    localStorage.removeItem("requestList");
 
 });
 
-document.querySelector(".closeModal").onclick = () => modal.style.display = "none";
+document.querySelectorAll(".addRequest").forEach(btn=>{
 
-window.onclick = function(e){
-    if(e.target === modal){
-        modal.style.display = "none";
-    }
+    btn.onclick=function(){
+
+        let id=this.dataset.id;
+        let name=this.dataset.name;
+
+        if(requestList.find(x=>x.id==id)){
+            return;
+        }
+
+        requestList.push({
+            id:id,
+            name:name
+        });
+
+        renderList();
+
+        this.innerHTML="✓ Added";
+        this.disabled=true;
+        this.classList.remove("primary");
+        this.classList.add("btn-secondary");
+
+    };
+
+});
+
+function renderList(){
+
+    let ul=document.getElementById("requestList");
+
+    ul.innerHTML="";
+
+    requestList.forEach((file,index)=>{
+
+    ul.innerHTML += `
+    <li class="request-item">
+        <span>${file.name}</span>
+
+        <button
+            type="button"
+            class="btn-remove"
+            onclick="removeFile(${index})">
+
+            ✕
+        </button>
+    </li>
+    `;
+
+    });
+
+    document.getElementById("requestCount").innerHTML=requestList.length;
+
+    document.getElementById("selected_files").value=
+        JSON.stringify(requestList);
+
+    localStorage.setItem(
+        "requestList",
+        JSON.stringify(requestList)
+    );
 }
+
+function removeFile(index){
+
+    let file = requestList[index];
+
+    requestList.splice(index,1);
+
+    renderList();
+
+    let btn = document.querySelector(`[data-id="${file.id}"]`);
+
+    if(btn){
+        btn.innerHTML = "+ Add";
+        btn.disabled = false;
+        btn.classList.remove("btn-secondary");
+        btn.classList.add("primary");
+    }
+
+}
+renderList();
+
+requestList.forEach(file => {
+
+    let btn = document.querySelector(`[data-id="${file.id}"]`);
+
+    if(btn){
+
+        btn.innerHTML = "✓ Added";
+        btn.disabled = true;
+        btn.classList.remove("primary");
+        btn.classList.add("btn-secondary");
+
+    }
+
+});
+setTimeout(() => {
+
+    const alert = document.querySelector(".alert-success");
+
+    if(alert){
+
+        alert.style.transition = "opacity .4s";
+
+        alert.style.opacity = "0";
+
+        setTimeout(() => alert.remove(), 400);
+
+    }
+
+}, 4000);
 
 </script>
 

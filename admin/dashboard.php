@@ -17,19 +17,42 @@ require_once '../includes/header.php';
 // 2. OVERDUE FILES
  $overdue_files = $pdo->query("SELECT COUNT(*) FROM requests WHERE current_status = 'Released' AND due_date < CURDATE()")->fetchColumn();
 
-// 3. PENDING ADMIN APPROVALS (Items stuck at 'Requested' or 'Return Requested' needing Admin Assignment)
+// 3. PENDING ADMIN APPROVALS 
  $pending_approvals = $pdo->query("SELECT COUNT(*) FROM requests WHERE current_status IN ('Requested', 'Return Requested')")->fetchColumn();
 
-// 4. PENDING RETURN (Files currently released to user)
+// 4. PENDING RETURN 
  $pending_return = $pdo->query("SELECT COUNT(*) FROM requests WHERE current_status = 'Released'")->fetchColumn();
 
-// 5. RECENT REQUESTS (For Dashboard Display)
+// 5. RECENT REQUESTS 
  $recent_req = $pdo->query("SELECT r.id, r.current_status, r.borrow_date, f.file_name, u.full_name 
                            FROM requests r 
                            JOIN files f ON r.file_id = f.id 
                            JOIN users u ON r.user_id = u.id 
                            WHERE r.current_status != 'Completed' AND r.current_status != 'Cancelled'
                            ORDER BY r.borrow_date DESC LIMIT 5");
+
+$selected_month = $_GET['month'] ?? date('m');
+$selected_year  = $_GET['year'] ?? date('Y');
+$dept_summary = $pdo->prepare("
+    SELECT
+        u.department,
+        COUNT(r.id) AS total_requests
+    FROM requests r
+    JOIN users u ON r.user_id = u.id
+    WHERE MONTH(r.borrow_date) = ?
+    AND YEAR(r.borrow_date) = ?
+    GROUP BY u.department
+    ORDER BY total_requests DESC
+");
+$dept_summary->execute([$selected_month, $selected_year]);
+$total_request = $pdo->prepare("
+    SELECT COUNT(*) 
+    FROM requests
+    WHERE MONTH(borrow_date) = ?
+    AND YEAR(borrow_date) = ?
+");
+$total_request->execute([$selected_month, $selected_year]);
+$total_requests = $total_request->fetchColumn();
 ?>
 
 <div class="layout-wrapper">
@@ -74,6 +97,138 @@ require_once '../includes/header.php';
                     <div class="value" style="font-size: 2rem; font-weight: bold; color: var(--text-dark); margin: 5px 0;"><?= number_format($pending_return) ?></div>
                     <div style="font-size: 0.8rem; color: #888;">Files with requestors</div>
                 </div>
+            </div>
+            <div class="card" style="margin-top:20px; background:white; border-radius:8px; box-shadow:0 2px 4px rgba(0,0,0,.05); padding:20px;">
+
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px;">
+                    <h3 style="margin:0;">Department Request Summary</h3>
+
+                    <form method="GET" style="display:flex; align-items:center; gap:10px;">
+
+                        <select
+                            name="month"
+                            onchange="this.form.submit()"
+                            style="
+                                padding:8px 14px;
+                                border:1px solid #d1d5db;
+                                border-radius:8px;
+                                background:#fff;
+                                color:#374151;
+                                font-size:14px;
+                                font-weight:500;
+                                cursor:pointer;
+                                outline:none;
+                                min-width:140px;
+                                box-shadow:0 1px 2px rgba(0,0,0,0.05);
+                            ">
+                            <?php
+                            for($m=1;$m<=12;$m++){
+                                $val = str_pad($m,2,"0",STR_PAD_LEFT);
+                                $selected = ($selected_month==$val) ? "selected" : "";
+                                echo "<option value='$val' $selected>".date('F', mktime(0,0,0,$m,1))."</option>";
+                            }
+                            ?>
+                        </select>
+
+                        <select
+                            name="year"
+                            onchange="this.form.submit()"
+                            style="
+                                padding:8px 14px;
+                                border:1px solid #d1d5db;
+                                border-radius:8px;
+                                background:#fff;
+                                color:#374151;
+                                font-size:14px;
+                                font-weight:500;
+                                cursor:pointer;
+                                outline:none;
+                                min-width:90px;
+                                box-shadow:0 1px 2px rgba(0,0,0,0.05);
+                            ">
+                            <?php
+                            for($y=date('Y'); $y>=2024; $y--){
+                                $selected = ($selected_year==$y) ? "selected" : "";
+                                echo "<option value='$y' $selected>$y</option>";
+                            }
+                            ?>
+                        </select>
+
+                    </form>
+                </div>
+
+                <table style="width:100%; border-collapse:collapse; table-layout:fixed;">
+                <colgroup>
+                    <col style="width:80%;">
+                    <col style="width:20%;">
+                </colgroup>
+                    <thead>
+                        <tr style="border-bottom:2px solid #eee;">
+                            <th style="padding:10px; text-align:left;">Department</th>
+                            <th style="padding:10px; text-align:center;">Total Request</th>
+                        </tr>
+                    </thead>
+
+                    <tbody>
+
+                    <?php if($dept_summary->rowCount()>0): ?>
+
+                        <?php while($row=$dept_summary->fetch()): ?>
+
+                        <tr style="border-bottom:1px solid #f5f5f5;">
+                        <td style="padding:12px;">
+                                <?= sanitize($row['department']) ?>
+                            </td>
+
+                            <td style="padding:12px; text-align:center;">
+                                <span style="
+                                    display:inline-block;
+                                    min-width:32px;
+                                    background:#eef4ff;
+                                    color:#2563eb;
+                                    padding:5px 12px;
+                                    border-radius:999px;
+                                    font-weight:600;
+                                ">
+                                    <?= $row['total_requests'] ?>
+                                </span>
+                            </td>
+                        </tr>
+
+                        <?php endwhile; ?>
+
+                    <?php else: ?>
+
+                        <tr>
+                            <td colspan="2" style="padding:25px; text-align:center; color:#999;">
+                                No request found.
+                            </td>
+                        </tr>
+
+                    <?php endif; ?>
+
+                    </tbody>
+                    <tfoot>
+                        <tr style="border-top:2px solid #ddd; background:#f9fafb;">
+                            <td style="padding:14px; font-weight:700;">
+                                Total Requests
+                            </td>
+                            <td style="padding:14px; text-align:center;">
+                                <span style="
+                                    display:inline-block;
+                                    min-width:32px;
+                                    background:#eef4ff;
+                                    color:#2563eb;
+                                    padding:5px 12px;
+                                    border-radius:999px;
+                                    font-weight:800;
+                                ">
+                                    <?= $total_requests ?>
+                                </span>
+                            </td>
+                        </tr>
+                    </tfoot>
+                </table>
             </div>
 
             <!-- Two Column Layout -->
