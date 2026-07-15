@@ -184,23 +184,35 @@ if (!empty($statusFilter)) {
 $stmt->execute();
 $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
+$releasedCount = 0;
+foreach ($rows as $r) {
+    if (($r['current_status'] ?? '') === 'Released') {
+        $releasedCount++;
+    }
+}
+
 require_once '../includes/header.php';
 ?>
 
-<div class="layout-wrapper">
+<div class="layout-wrapper" id="deptFilesRoot">
     <?php require_once '../includes/sidebar.php'; ?>
 
     <div class="main-content">
         <div class="content-area">
 
-            <div class="page-header">
+            <div class="page-header-row">
                 <div class="page-title">
                     <h1>Department Files</h1>
                     <p>View department file requests and help return or extend released files</p>
                 </div>
             </div>
 
-            <div class="filter-bar-card">
+            <?php if (!empty($_SESSION['success'])): ?>
+                <div class="flash-banner success"><?= sanitize($_SESSION['success']) ?></div>
+                <?php unset($_SESSION['success']); ?>
+            <?php endif; ?>
+
+            <div class="filter-bar-card list-controls-card">
                 <form method="GET" class="filter-form-inline">
 
                     <div class="search-box-modern">
@@ -228,6 +240,17 @@ require_once '../includes/header.php';
 
                     <button type="submit" class="btn-filter">Filter</button>
                 </form>
+
+                <?php if ($releasedCount > 0): ?>
+                <div class="bulk-list-toolbar" id="bulkListToolbar">
+                    <label class="bulk-mode-control">
+                        <input type="checkbox" id="selectAllBulk">
+                        <span class="bulk-mode-label">Select Files</span>
+                    </label>
+                    <span class="bulk-select-hint" id="bulkStripCount">None selected</span>
+                    <button type="button" class="bulk-cancel-btn" id="bulkExitBtn" hidden>Cancel</button>
+                </div>
+                <?php endif; ?>
             </div>
 
             <div class="dept-info-card">
@@ -268,8 +291,18 @@ require_once '../includes/header.php';
                         );
                     ?>
 
-                    <div class="file-card <?= $overDue ? 'is-overdue' : '' ?>">
+                    <div class="file-card bulk-item <?= $overDue ? 'is-overdue' : '' ?>"
+                         data-selectable="<?= $canReturn ? '1' : '0' ?>"
+                         data-request-id="<?= (int)$row['id'] ?>">
                         <div class="card-main">
+                            <?php if ($canReturn): ?>
+                            <div class="bulk-checkbox-wrap">
+                                <input type="checkbox"
+                                       class="bulk-checkbox"
+                                       value="<?= (int)$row['id'] ?>"
+                                       aria-label="Select <?= sanitize($row['file_name']) ?>">
+                            </div>
+                            <?php endif; ?>
                             <div class="file-identity">
                                 <h4 class="file-title"><?= sanitize($row['file_name']) ?></h4>
 
@@ -346,17 +379,8 @@ require_once '../includes/header.php';
                             </div>
 
                             <div class="action-buttons">
-                                <?php if($canReturn): ?>
-                                    <form method="POST" action="../actions/request_actions.php" onsubmit="return confirm('Confirm return request for this file?');" style="display:inline;">
-                                        <input type="hidden" name="request_id" value="<?= $row['id'] ?>">
-                                        <input type="hidden" name="action" value="request_return">
-                                        <input type="hidden" name="redirect_to" value="department_files">
-                                        <button class="btn-sm primary">Return File</button>
-                                    </form>
-                                <?php endif; ?>
-
                                 <?php if($canExtend): ?>
-                                    <form method="POST" action="../actions/request_actions.php" onsubmit="return confirm('Request 3-day extension for this file?');" style="display:inline;">
+                                    <form method="POST" action="../actions/request_actions.php" onsubmit="return confirm('Request 3-day extension for this file?');" style="display:inline;" class="no-bulk-toggle">
                                         <input type="hidden" name="request_id" value="<?= $row['id'] ?>">
                                         <input type="hidden" name="action" value="request_extension">
                                         <input type="hidden" name="redirect_to" value="department_files">
@@ -405,13 +429,24 @@ require_once '../includes/header.php';
     </div>
 </div>
 
+<div class="bulk-toolbar" id="bulkToolbar" aria-hidden="true">
+    <div class="bulk-toolbar-count" id="bulkSelectedCount">0 files selected</div>
+    <div class="bulk-toolbar-actions">
+        <button type="button" class="btn-bulk btn-bulk-ghost" id="cancelSelectionBtn">Cancel Selection</button>
+        <form id="bulkReturnForm" method="POST" action="../actions/request_actions.php" data-bulk-ids>
+            <input type="hidden" name="action" value="bulk_request_return">
+            <input type="hidden" name="redirect_to" value="department_files">
+            <button type="submit" class="btn-bulk btn-bulk-primary">Return Selected Files</button>
+        </form>
+    </div>
+</div>
+
 <style>
-.content-area { padding: 24px; background: #f3f4f6; min-height: calc(100vh - 60px); }
-.page-header { margin-bottom: 24px; }
+.content-area { padding: 28px 32px 32px; background: #f8fafc; font-family: var(--bs-font, 'IBM Plex Sans', sans-serif); }
 .page-title h1 { font-size: 1.5rem; margin: 0 0 4px 0; color: #111827; font-weight: 700; }
 .page-title p { margin: 0; color: #6b7280; font-size: 0.9rem; }
 
-.filter-bar-card { background: #fff; padding: 16px 20px; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); margin-bottom: 12px; }
+.filter-bar-card:not(.list-controls-card) { background: #fff; padding: 16px 20px; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); margin-bottom: 12px; }
 .filter-form-inline { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
 
 .search-box-modern { position: relative; flex: 1; min-width: 250px; }
@@ -625,5 +660,27 @@ require_once '../includes/header.php';
     .card-status-actions { width: 100%; flex-direction: row; justify-content: space-between; align-items: center; }
 }
 </style>
+
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    if (typeof BulkSelect === 'undefined' || !document.getElementById('selectAllBulk')) return;
+
+    var bulk = BulkSelect.init({
+        root: document.getElementById('deptFilesRoot'),
+        modeContainer: document.getElementById('deptFilesRoot'),
+        noun: 'file'
+    });
+
+    document.getElementById('bulkReturnForm')?.addEventListener('submit', function (e) {
+        if (!bulk.fillForm(this)) {
+            e.preventDefault();
+            return;
+        }
+        if (!confirm('Return ' + bulk.getSelectedIds().length + ' selected file(s)?')) {
+            e.preventDefault();
+        }
+    });
+});
+</script>
 
 <?php require_once '../includes/footer.php'; ?>

@@ -1,95 +1,52 @@
 <?php
 require_once '../config/db.php';
 require_once '../config/functions.php';
+require_once '../config/workflow.php';
 
 $role = $_SESSION['active_role'] ?? $_SESSION['role'];
-$userId = $_SESSION['user_id'];
+$userId = (int)$_SESSION['user_id'];
 
 $action = $_POST['action'] ?? '';
-$requestId = $_POST['request_id'] ?? null;
-$staffId = $_POST['assigned_staff_id'] ?? null;
+$requestId = isset($_POST['request_id']) ? (int)$_POST['request_id'] : null;
+$staffId = (int)($_POST['assigned_staff_id'] ?? 0);
 $remarks = $_POST['remarks'] ?? null;
-
-function logHistory($pdo,$rid,$fid,$action,$user){
-    $role = $_SESSION['active_role'] ?? $_SESSION['role'] ?? 'Unknown';
-    $pdo->prepare("
-        INSERT INTO file_history
-        (request_id,file_id,action,performed_by,performed_role,created_at)
-        VALUES(?,?,?,?,?,NOW())
-    ")->execute([
-        $rid,
-        $fid,
-        $action,
-        $user,
-        $role
-    ]);
-}
 
 # ===============================
 # REQUESTOR ACTIONS
 # ===============================
-if($role == 'requestor') {
-    if($action == 'create_multiple_request') {
+if ($role == 'requestor') {
+    if ($action == 'create_multiple_request') {
 
         $remarks = $_POST['remarks'] ?? '';
         $files = json_decode($_POST['selected_files'], true);
 
-        if(empty($files)){
+        if (empty($files)) {
             header("Location: ../requestor/browse.php");
             exit;
         }
 
-        foreach($files as $item){
-
+        foreach ($files as $item) {
             $fileId = $item['id'];
 
-            $stmtFile = $pdo->prepare("
-                SELECT file_name
-                FROM files
-                WHERE id=?
-            ");
+            $stmtFile = $pdo->prepare("SELECT file_name FROM files WHERE id=?");
             $stmtFile->execute([$fileId]);
-
             $file = $stmtFile->fetch(PDO::FETCH_ASSOC);
-
             $file_name = $file['file_name'];
 
             $pdo->prepare("
-            INSERT INTO requests
-            (file_id,user_id,current_status,status,borrow_date,extension_count,remarks)
-            VALUES(?,?,'Pending HOD Approval','pending_hod',NOW(),0,?)
-        ")->execute([$fileId,$userId,$remarks]);
+                INSERT INTO requests
+                (file_id,user_id,current_status,status,borrow_date,extension_count,remarks)
+                VALUES(?,?,'Pending HOD Approval','pending_hod',NOW(),0,?)
+            ")->execute([$fileId, $userId, $remarks]);
 
-        $requestId = $pdo->lastInsertId();
+            $newRequestId = $pdo->lastInsertId();
 
-        $pdo->prepare("
-            UPDATE files
-            SET status='requested'
-            WHERE id=?
-        ")->execute([$fileId]);
+            $pdo->prepare("UPDATE files SET status='requested' WHERE id=?")->execute([$fileId]);
 
-        logHistory(
-            $pdo,
-            $requestId,
-            $fileId,
-            'Requested (Pending HOD)',
-            $userId
-        );
-
+            logHistory($pdo, $newRequestId, $fileId, 'Requested (Pending HOD)', $userId);
         }
 
-        $stmt = $pdo->prepare("
-            SELECT full_name,email
-            FROM users
-            WHERE id=?
-        ");
-        $stmt->execute([$userId]);
-
-        $user = $stmt->fetch(PDO::FETCH_ASSOC);
-
-        $subject = "New File Requests Submitted";
         $count = count($files);
-
         $_SESSION['success'] = "$count requests submitted successfully.";
 
         header("Location: ../requestor/browse.php");
@@ -97,7 +54,7 @@ if($role == 'requestor') {
     }
 
     # Borrow file - Redirect to HOD first
-    if($action == 'create_request') {
+    if ($action == 'create_request') {
         $fileId = $_POST['file_id'];
         $stmtFile = $pdo->prepare("SELECT file_name FROM files WHERE id=?");
         $stmtFile->execute([$fileId]);
@@ -109,405 +66,202 @@ if($role == 'requestor') {
             INSERT INTO requests
             (file_id,user_id,current_status,status,borrow_date,extension_count,remarks)
             VALUES(?,?,'Pending HOD Approval','pending_hod',NOW(),0,?)
-        ")->execute([$fileId,$userId,$remarks]);
+        ")->execute([$fileId, $userId, $remarks]);
 
-        $requestId = $pdo->lastInsertId();
+        $newRequestId = $pdo->lastInsertId();
 
         $stmt = $pdo->prepare("SELECT full_name,email FROM users WHERE id=?");
         $stmt->execute([$userId]);
         $user = $stmt->fetch(PDO::FETCH_ASSOC);
-        
+
         $subject = "New File Request Submitted";
 
         $message = "
         <div style='font-family:Arial, Helvetica, sans-serif; background:#f4f6f8; padding:20px;'>
-
             <div style='max-width:600px; margin:auto; background:#ffffff; border-radius:8px; overflow:hidden; border:1px solid #e5e7eb;'>
-
-                <!-- Header -->
                 <div style='background:#1e293b; color:#ffffff; padding:16px 24px; font-size:18px; font-weight:bold;'>
                     VTS e-Library System
                 </div>
-
-                <!-- Body -->
                 <div style='padding:24px; color:#334155; font-size:14px;'>
-
                     <p style='margin-top:0;'>
                         A new file request has been submitted and is awaiting <b>HOD approval</b>.
                     </p>
-
                     <table style='width:100%; border-collapse:collapse; margin-top:15px;'>
-
                         <tr>
-                            <td style='padding:8px; background:#f8fafc; border:1px solid #e2e8f0; width:35%; font-weight:bold;'>
-                                Requester
-                            </td>
-                            <td style='padding:8px; border:1px solid #e2e8f0;'>
-                                {$user['full_name']}
-                            </td>
+                            <td style='padding:8px; background:#f8fafc; border:1px solid #e2e8f0; width:35%; font-weight:bold;'>Requester</td>
+                            <td style='padding:8px; border:1px solid #e2e8f0;'>{$user['full_name']}</td>
                         </tr>
-
                         <tr>
-                            <td style='padding:8px; background:#f8fafc; border:1px solid #e2e8f0; font-weight:bold;'>
-                                File Name
-                            </td>
-                            <td style='padding:8px; border:1px solid #e2e8f0;'>
-                                {$file_name}
-                            </td>
+                            <td style='padding:8px; background:#f8fafc; border:1px solid #e2e8f0; font-weight:bold;'>File Name</td>
+                            <td style='padding:8px; border:1px solid #e2e8f0;'>{$file_name}</td>
                         </tr>
-
                         <tr>
-                            <td style='padding:8px; background:#f8fafc; border:1px solid #e2e8f0; font-weight:bold;'>
-                                Status
-                            </td>
-                            <td style='padding:8px; border:1px solid #e2e8f0;'>
-                                Pending HOD Approval
-                            </td>
+                            <td style='padding:8px; background:#f8fafc; border:1px solid #e2e8f0; font-weight:bold;'>Status</td>
+                            <td style='padding:8px; border:1px solid #e2e8f0;'>Pending HOD Approval</td>
                         </tr>
-
                         <tr>
-                            <td style='padding:8px; background:#f8fafc; border:1px solid #e2e8f0; font-weight:bold;'>
-                                Remarks
-                            </td>
-                            <td style='padding:8px; border:1px solid #e2e8f0;'>
-                                {$remarks}
-                            </td>
+                            <td style='padding:8px; background:#f8fafc; border:1px solid #e2e8f0; font-weight:bold;'>Remarks</td>
+                            <td style='padding:8px; border:1px solid #e2e8f0;'>{$remarks}</td>
                         </tr>
-
                     </table>
-
                     <p style='margin-top:20px;'>
                         The request will proceed once it has been approved by the Head of Department.
                     </p>
-
                 </div>
-
-                <!-- Footer -->
                 <div style='background:#f8fafc; padding:14px 24px; font-size:12px; color:#64748b; text-align:center;'>
                     This is an automated message from <b>VTS e-Library System</b>.
                 </div>
-
             </div>
-
         </div>
         ";
 
-        $stmtAdmins = $pdo->prepare("
-            SELECT email 
-            FROM users 
-            WHERE role = 'operations'
-        ");
+        $stmtAdmins = $pdo->prepare("SELECT email FROM users WHERE role = 'operations'");
         $stmtAdmins->execute();
-
-        $admins = $stmtAdmins->fetchAll(PDO::FETCH_ASSOC);
-
-        foreach($admins as $admin){
-            sendEmail($admin['email'],$subject,$message);
+        foreach ($stmtAdmins->fetchAll(PDO::FETCH_ASSOC) as $admin) {
+            sendEmail($admin['email'], $subject, $message);
         }
 
         $pdo->prepare("UPDATE files SET status='requested' WHERE id=?")->execute([$fileId]);
-        logHistory($pdo,$requestId,$fileId,'Requested (Pending HOD)',$userId);
+        logHistory($pdo, $newRequestId, $fileId, 'Requested (Pending HOD)', $userId);
 
         header("Location: ../requestor/my_files.php");
         exit;
     }
 
     # Cancel request
-    if($action == 'cancel_request') {
+    if ($action == 'cancel_request') {
         $stmt = $pdo->prepare("SELECT * FROM requests WHERE id=?");
         $stmt->execute([$requestId]);
         $req = $stmt->fetch(PDO::FETCH_ASSOC);
 
-       if(in_array($req['current_status'], ['Requested', 'Pending HOD Approval'])) {
+        if ($req && in_array($req['current_status'], ['Requested', 'Pending HOD Approval'])) {
+            if ($req['status'] == 'extension_requested') {
+                $pdo->prepare("
+                    UPDATE requests
+                    SET current_status='Released',
+                        status='active'
+                    WHERE id=?
+                ")->execute([$requestId]);
 
-        if($req['status'] == 'extension_requested') {
+                logHistory($pdo, $requestId, $req['file_id'], 'Extension Cancelled (Reverted to Released)', $userId);
+            } else {
+                $pdo->prepare("
+                    UPDATE requests
+                    SET current_status='Cancelled',
+                        status='rejected'
+                    WHERE id=?
+                ")->execute([$requestId]);
 
-            $pdo->prepare("
-                UPDATE requests 
-                SET current_status='Released',
-                    status='active'
-                WHERE id=?
-            ")->execute([$requestId]);
-
-            logHistory($pdo,$requestId,$req['file_id'],'Extension Cancelled (Reverted to Released)',$userId);
-
-        } 
-
-        else {
-
-            $pdo->prepare("
-                UPDATE requests 
-                SET current_status='Cancelled', 
-                    status='rejected' 
-                WHERE id=?
-            ")->execute([$requestId]);
-
-            $pdo->prepare("
-                UPDATE files 
-                SET status='available' 
-                WHERE id=?
-            ")->execute([$req['file_id']]);
-
-            logHistory($pdo,$requestId,$req['file_id'],'Cancelled',$userId);
+                $pdo->prepare("UPDATE files SET status='available' WHERE id=?")->execute([$req['file_id']]);
+                logHistory($pdo, $requestId, $req['file_id'], 'Cancelled', $userId);
+            }
         }
     }
-}
 
-   # Return request
-    if($action == 'request_return') {
+    # Single return
+    if ($action == 'request_return' && $requestId) {
+        $result = processReturnRequest($pdo, $requestId, $userId);
+        if (!$result['ok'] && ($result['error'] ?? '') === 'Unauthorized return request.') {
+            die($result['error']);
+        }
+        if (!$result['ok'] && ($result['error'] ?? '') === 'Request not found.') {
+            die($result['error']);
+        }
+    }
 
-        $stmt = $pdo->prepare("
-            SELECT 
-                r.*, 
-                f.file_name,
-                owner.full_name AS owner_name,
-                owner.department AS owner_department,
-                actor.full_name AS actor_name,
-                actor.email AS actor_email,
-                actor.department AS actor_department
-            FROM requests r
-            JOIN files f ON r.file_id = f.id
-            JOIN users owner ON r.user_id = owner.id
-            JOIN users actor ON actor.id = ?
-            WHERE r.id = ?
-        ");
-        $stmt->execute([$userId, $requestId]);
-        $req = $stmt->fetch(PDO::FETCH_ASSOC);
+    # Bulk return — same processor as single
+    if ($action == 'bulk_request_return') {
+        $ids = normalizeRequestIds($_POST['request_ids'] ?? []);
+        $ok = 0;
+        $fail = 0;
 
-        if (!$req) {
-            die("Request not found.");
+        foreach ($ids as $rid) {
+            $result = processReturnRequest($pdo, $rid, $userId);
+            if ($result['ok']) {
+                $ok++;
+            } else {
+                $fail++;
+            }
         }
 
-        // allow owner OR same department user to request return
-        $canReturn = (
-            $req['user_id'] == $userId ||
-            (
-                !empty($req['owner_department']) &&
-                !empty($req['actor_department']) &&
-                $req['owner_department'] === $req['actor_department']
-            )
-        );
-
-        if (!$canReturn) {
-            die("Unauthorized return request.");
+        if ($ok > 0) {
+            $_SESSION['success'] = $ok === 1
+                ? '1 return request submitted.'
+                : "$ok return requests submitted.";
         }
-
-        if($req['current_status'] == 'Released') {
-
-            $pdo->prepare("
-                UPDATE requests 
-                SET current_status='Return Requested', 
-                    status='active',
-                    updated_at=NOW()
-                WHERE id=?
-            ")->execute([$requestId]);
-
-            logHistory($pdo, $requestId, $req['file_id'], 'Return Requested', $userId);
-
-            $subject = "File Return Requested";
-
-            $requestedByText = $req['actor_name'];
-
-            if ($req['user_id'] != $userId) {
-                $requestedByText .= " on behalf of " . $req['owner_name'];
-            }
-
-            $message = "
-            <div style='font-family:Arial, Helvetica, sans-serif; background:#f4f6f8; padding:20px;'>
-
-                <div style='max-width:600px; margin:auto; background:#ffffff; border-radius:8px; overflow:hidden; border:1px solid #e5e7eb;'>
-
-                    <div style='background:#1e293b; color:#ffffff; padding:16px 24px; font-size:18px; font-weight:bold;'>
-                        VTS e-Library System
-                    </div>
-
-                    <div style='padding:24px; color:#334155; font-size:14px;'>
-
-                        <p style='margin-top:0;'>A file return request has been submitted.</p>
-
-                        <table style='width:100%; border-collapse:collapse; margin-top:15px;'>
-
-                            <tr>
-                                <td style='padding:8px; background:#f8fafc; border:1px solid #e2e8f0; width:35%; font-weight:bold;'>
-                                    Requested By
-                                </td>
-                                <td style='padding:8px; border:1px solid #e2e8f0;'>
-                                    {$requestedByText}
-                                </td>
-                            </tr>
-
-                            <tr>
-                                <td style='padding:8px; background:#f8fafc; border:1px solid #e2e8f0; font-weight:bold;'>
-                                    File Owner
-                                </td>
-                                <td style='padding:8px; border:1px solid #e2e8f0;'>
-                                    {$req['owner_name']}
-                                </td>
-                            </tr>
-
-                            <tr>
-                                <td style='padding:8px; background:#f8fafc; border:1px solid #e2e8f0; font-weight:bold;'>
-                                    Department
-                                </td>
-                                <td style='padding:8px; border:1px solid #e2e8f0;'>
-                                    {$req['owner_department']}
-                                </td>
-                            </tr>
-
-                            <tr>
-                                <td style='padding:8px; background:#f8fafc; border:1px solid #e2e8f0; font-weight:bold;'>
-                                    File Name
-                                </td>
-                                <td style='padding:8px; border:1px solid #e2e8f0;'>
-                                    {$req['file_name']}
-                                </td>
-                            </tr>
-
-                            <tr>
-                                <td style='padding:8px; background:#f8fafc; border:1px solid #e2e8f0; font-weight:bold;'>
-                                    Request ID
-                                </td>
-                                <td style='padding:8px; border:1px solid #e2e8f0;'>
-                                    {$requestId}
-                                </td>
-                            </tr>
-
-                        </table>
-
-                        <p style='margin-top:20px;'>
-                            Please assign restoration staff in the system to process the file return.
-                        </p>
-
-                    </div>
-
-                    <div style='background:#f8fafc; padding:14px 24px; font-size:12px; color:#64748b; text-align:center;'>
-                        This is an automated message from <b>VTS e-Library System</b>.
-                    </div>
-
-                </div>
-
-            </div>
-            ";
-
-            $stmtAdmins = $pdo->prepare("
-                SELECT email 
-                FROM users 
-                WHERE role = 'operations'
-            ");
-            $stmtAdmins->execute();
-
-            $admins = $stmtAdmins->fetchAll(PDO::FETCH_ASSOC);
-
-            foreach($admins as $admin){
-                sendEmail($admin['email'], $subject, $message);
-            }
+        if ($fail > 0 && $ok === 0) {
+            $_SESSION['error'] = 'Unable to process return for the selected files.';
         }
     }
 
     # Request Extension
-    if($action == 'request_extension') {
+    if ($action == 'request_extension') {
         $stmt = $pdo->prepare("SELECT r.*, f.file_name
-        FROM requests r
-        JOIN files f ON r.file_id = f.id
-        WHERE r.id=?");
+            FROM requests r
+            JOIN files f ON r.file_id = f.id
+            WHERE r.id=?");
         $stmt->execute([$requestId]);
         $req = $stmt->fetch(PDO::FETCH_ASSOC);
 
-        // Logic: Max 2 extensions (count 0 -> 1, 1 -> 2)
-        if($req['current_status']=='Released' && $req['extension_count'] < 2) {
-
+        if ($req && $req['current_status'] == 'Released' && $req['extension_count'] < 2) {
             $newCount = $req['extension_count'] + 1;
             $pdo->prepare("
-                UPDATE requests 
-                SET status='extension_requested', 
-                    current_status='Pending HOD Approval', 
-                    extension_count = ? 
+                UPDATE requests
+                SET status='extension_requested',
+                    current_status='Pending HOD Approval',
+                    extension_count = ?
                 WHERE id=?"
             )->execute([$newCount, $requestId]);
 
-            logHistory($pdo,$requestId,$req['file_id'],"Extension Request #$newCount",$userId);
+            logHistory($pdo, $requestId, $req['file_id'], "Extension Request #$newCount", $userId);
         }
+
         $stmt = $pdo->prepare("SELECT full_name,email FROM users WHERE id=?");
         $stmt->execute([$userId]);
         $user = $stmt->fetch(PDO::FETCH_ASSOC);
         $subject = "File Extension Request";
         $message = "
         <div style='font-family:Arial, Helvetica, sans-serif; background:#f4f6f8; padding:20px;'>
-
             <div style='max-width:600px; margin:auto; background:#ffffff; border-radius:8px; overflow:hidden; border:1px solid #e5e7eb;'>
-
-                <!-- Header -->
                 <div style='background:#1e293b; color:#ffffff; padding:16px 24px; font-size:18px; font-weight:bold;'>
                     VTS e-Library System
                 </div>
-
-                <!-- Body -->
                 <div style='padding:24px; color:#334155; font-size:14px;'>
-
                     <p style='margin-top:0;'>
                         A request for <b>file extension</b> has been submitted.
                     </p>
-
                     <table style='width:100%; border-collapse:collapse; margin-top:15px;'>
-
                         <tr>
-                            <td style='padding:8px; background:#f8fafc; border:1px solid #e2e8f0; width:35%; font-weight:bold;'>
-                                Requester
-                            </td>
-                            <td style='padding:8px; border:1px solid #e2e8f0;'>
-                                {$user['full_name']}
-                            </td>
+                            <td style='padding:8px; background:#f8fafc; border:1px solid #e2e8f0; width:35%; font-weight:bold;'>Requester</td>
+                            <td style='padding:8px; border:1px solid #e2e8f0;'>{$user['full_name']}</td>
                         </tr>
-
                         <tr>
-                            <td style='padding:8px; background:#f8fafc; border:1px solid #e2e8f0; font-weight:bold;'>
-                                File Name
-                            </td>
-                            <td style='padding:8px; border:1px solid #e2e8f0;'>
-                                {$req['file_name']}
-                            </td>
+                            <td style='padding:8px; background:#f8fafc; border:1px solid #e2e8f0; font-weight:bold;'>File Name</td>
+                            <td style='padding:8px; border:1px solid #e2e8f0;'>{$req['file_name']}</td>
                         </tr>
-
                         <tr>
-                            <td style='padding:8px; background:#f8fafc; border:1px solid #e2e8f0; font-weight:bold;'>
-                                Request ID
-                            </td>
-                            <td style='padding:8px; border:1px solid #e2e8f0;'>
-                                {$requestId}
-                            </td>
+                            <td style='padding:8px; background:#f8fafc; border:1px solid #e2e8f0; font-weight:bold;'>Request ID</td>
+                            <td style='padding:8px; border:1px solid #e2e8f0;'>{$requestId}</td>
                         </tr>
-
                     </table>
-
                     <p style='margin-top:20px;'>
                         The request will be reviewed by the Head of Department for approval.
                     </p>
-
                 </div>
-
-                <!-- Footer -->
                 <div style='background:#f8fafc; padding:14px 24px; font-size:12px; color:#64748b; text-align:center;'>
                     This is an automated message from <b>VTS e-Library System</b>.
                 </div>
-
             </div>
-
         </div>
         ";
 
-        $stmtAdmins = $pdo->prepare("
-            SELECT email 
-            FROM users 
-            WHERE role = 'operations'
-        ");
+        $stmtAdmins = $pdo->prepare("SELECT email FROM users WHERE role = 'operations'");
         $stmtAdmins->execute();
-
-        $admins = $stmtAdmins->fetchAll(PDO::FETCH_ASSOC);
-
-        foreach($admins as $admin){
-            sendEmail($admin['email'],$subject,$message);
+        foreach ($stmtAdmins->fetchAll(PDO::FETCH_ASSOC) as $admin) {
+            sendEmail($admin['email'], $subject, $message);
         }
     }
+
     $redirectTo = $_POST['redirect_to'] ?? '';
 
     if ($redirectTo === 'department_files') {
@@ -521,346 +275,195 @@ if($role == 'requestor') {
 # ===============================
 # HOD ACTIONS
 # ===============================
-if($role == 'hod') {
-    
-    $stmt = $pdo->prepare("
-    SELECT r.*, f.file_name, u.email, u.hod_id as requester_hod_id
-    FROM requests r
-    JOIN users u ON r.user_id = u.id
-    JOIN files f ON r.file_id = f.id
-    WHERE r.id=?
-    ");
-    $stmt->execute([$requestId]);
-    $req = $stmt->fetch(PDO::FETCH_ASSOC);
+if ($role == 'hod') {
 
-    $stmtHod = $pdo->prepare("SELECT department FROM users WHERE id = ?");
-    $stmtHod->execute([$userId]);
-    $hodData = $stmtHod->fetch(PDO::FETCH_ASSOC);
-    $hod_department = $hodData['department'] ?? '';
-
-    if (!$req || $req['requester_hod_id'] != $userId){
+    # Bulk approve
+    if ($action == 'bulk_approve_hod') {
+        $ids = normalizeRequestIds($_POST['request_ids'] ?? []);
+        $ok = 0;
+        foreach ($ids as $rid) {
+            $result = processHodApprove($pdo, $rid, $userId);
+            if ($result['ok']) {
+                $ok++;
+            }
+        }
+        if ($ok > 0) {
+            $_SESSION['success'] = $ok === 1
+                ? '1 request approved.'
+                : "$ok requests approved.";
+        }
         header("Location: ../hod/approvals.php");
         exit;
     }
-    
-    if($action == 'approve_hod') {
-        if($req['current_status'] == 'Pending HOD Approval') {
 
-            if($req['extension_count'] > 0) {
-
-                $newDue = calculateDueDate($pdo, $req['due_date'], 3);
-
-                $pdo->prepare("
-                    UPDATE requests 
-                    SET current_status='Released',
-                        status='active',
-                        due_date = ?,
-                        hod_timestamp = NOW()
-                    WHERE id=?
-                ")->execute([$newDue, $requestId]);
-
-                logHistory($pdo,$requestId,$req['file_id'],'Extension Approved',$userId);
-
-            } else {
-
-                $pdo->prepare("
-                    UPDATE requests 
-                    SET current_status='Approved by HOD',
-                        hod_timestamp = NOW()
-                    WHERE id=?
-                ")->execute([$requestId]);
-
-                logHistory($pdo,$requestId,$req['file_id'],'Approved by HOD',$userId);
-            }
-            $userEmail = $req['email'];
-            $stmt = $pdo->prepare("SELECT full_name,email FROM users WHERE id=?");
-            $stmt->execute([$userId]);
-            $user = $stmt->fetch(PDO::FETCH_ASSOC);
-            $subject = "File Request Approved by HOD";
-
-            $message = "
-            <div style='font-family:Arial, Helvetica, sans-serif; background:#f4f6f8; padding:20px;'>
-
-                <div style='max-width:600px; margin:auto; background:#ffffff; border-radius:8px; overflow:hidden; border:1px solid #e5e7eb;'>
-
-                    <!-- Header -->
-                    <div style='background:#1e293b; color:#ffffff; padding:16px 24px; font-size:18px; font-weight:bold;'>
-                        VTS e-Library System
-                    </div>
-
-                    <!-- Body -->
-                    <div style='padding:24px; color:#334155; font-size:14px;'>
-
-                        <p style='margin-top:0;'>Your file request has been <b>approved</b> by your Head of Department.</p>
-
-                        <table style='width:100%; border-collapse:collapse; margin-top:15px;'>
-
-                            <tr>
-                                <td style='padding:8px; background:#f8fafc; border:1px solid #e2e8f0; width:35%; font-weight:bold;'>
-                                    File Name
-                                </td>
-                                <td style='padding:8px; border:1px solid #e2e8f0;'>
-                                    {$req['file_name']}
-                                </td>
-                            </tr>
-
-                            <tr>
-                                <td style='padding:8px; background:#f8fafc; border:1px solid #e2e8f0; font-weight:bold;'>
-                                    Request ID
-                                </td>
-                                <td style='padding:8px; border:1px solid #e2e8f0;'>
-                                    {$requestId}
-                                </td>
-                            </tr>
-
-                        </table>
-
-                        <p style='margin-top:20px;'>
-                            Your request will now be processed by the archive team.<br>
-                            You will receive another notification once the file is ready for collection.
-                        </p>
-
-                    </div>
-
-                    <!-- Footer -->
-                    <div style='background:#f8fafc; padding:14px 24px; font-size:12px; color:#64748b; text-align:center;'>
-                        This is an automated message from <b>VTS e-Library System</b>.
-                    </div>
-
-                </div>
-
-            </div>
-            ";
-            
-            sendEmail($req['email'],$subject,$message);
-        }
-    }
-
-    if($action == 'reject_hod') {
-        if($req['current_status'] == 'Pending HOD Approval') {
-            if($req['extension_count'] > 0) {
-
-                $pdo->prepare("UPDATE requests 
-                            SET current_status='Released', status='active' 
-                            WHERE id=?")->execute([$requestId]);
-
-                logHistory($pdo,$requestId,$req['file_id'],'Extension Rejected',$userId);
-
-            } else {
-
-                $pdo->prepare("UPDATE requests 
-                            SET current_status='Cancelled', status='rejected' 
-                            WHERE id=?")->execute([$requestId]);
-
-                $pdo->prepare("UPDATE files 
-                            SET status='available' 
-                            WHERE id=?")->execute([$req['file_id']]);
-
-                logHistory($pdo,$requestId,$req['file_id'],'Rejected by HOD',$userId);
+    # Bulk reject
+    if ($action == 'bulk_reject_hod') {
+        $ids = normalizeRequestIds($_POST['request_ids'] ?? []);
+        $ok = 0;
+        foreach ($ids as $rid) {
+            $result = processHodReject($pdo, $rid, $userId);
+            if ($result['ok']) {
+                $ok++;
             }
         }
+        if ($ok > 0) {
+            $_SESSION['success'] = $ok === 1
+                ? '1 request rejected.'
+                : "$ok requests rejected.";
+        }
+        header("Location: ../hod/approvals.php");
+        exit;
     }
-    
+
+    # Single approve / reject
+    if ($requestId && $action == 'approve_hod') {
+        processHodApprove($pdo, $requestId, $userId);
+        header("Location: ../hod/approvals.php");
+        exit;
+    }
+
+    if ($requestId && $action == 'reject_hod') {
+        processHodReject($pdo, $requestId, $userId);
+        header("Location: ../hod/approvals.php");
+        exit;
+    }
+
     header("Location: ../hod/approvals.php");
     exit;
 }
 
 # ===============================
-# LOAD REQUEST FOR ADMIN/STAFF
-# ===============================
-$stmt = $pdo->prepare("
-    SELECT r.*, f.file_name
-    FROM requests r
-    JOIN files f ON r.file_id = f.id
-    WHERE r.id=?
-");
-$stmt->execute([$requestId]);
-$req = $stmt->fetch(PDO::FETCH_ASSOC);
-if(!$req) exit;
-
-# ===============================
 # ADMIN ACTIONS
 # ===============================
-if($role == 'admin') {
+if ($role == 'admin') {
 
-    if($action == 'assign_retrieval' && $req['current_status']=='Approved by HOD') {
-        $pdo->prepare("
-            UPDATE requests
-            SET current_status='Retrieval Assigned',
-                status='approved',
-                assigned_to=?,
-                retrieval_assigned_at=NOW()
-            WHERE id=?
-        ")->execute([$staffId,$requestId]);
-        logHistory($pdo,$requestId,$req['file_id'],'Retrieval Assigned',$userId);
+    # --- Bulk admin actions ---
+    if ($action == 'bulk_assign_retrieval') {
+        $ids = normalizeRequestIds($_POST['request_ids'] ?? []);
+        $ok = 0;
+        foreach ($ids as $rid) {
+            $result = processAssignRetrieval($pdo, $rid, $staffId, $userId);
+            if ($result['ok']) {
+                $ok++;
+            }
+        }
+        if ($ok > 0) {
+            $_SESSION['success'] = "$ok retrieval assignment(s) completed.";
+        }
+        header("Location: ../admin/requests.php");
+        exit;
     }
 
-   if($action == 'release_file' && $req['current_status']=='File Retrieved') {
-
-    $dueDate = calculateDueDate($pdo, date('Y-m-d'), 3);
-
-    $pdo->prepare("
-        UPDATE requests
-        SET current_status='Released',
-            status='active',
-            released_at = NOW(),
-            due_date = ?
-        WHERE id=?"
-    )->execute([$dueDate,$requestId]);
-
-    $pdo->prepare("
-        UPDATE files
-        SET status='borrowed'
-        WHERE id=?"
-    )->execute([$req['file_id']]);
-
-    logHistory($pdo,$requestId,$req['file_id'],'Released',$userId);
-
-    # EMAIL
-    $stmt = $pdo->prepare("SELECT email FROM users WHERE id=?");
-    $stmt->execute([$req['user_id']]);
-    $user = $stmt->fetch();
-
-    $subject = "File Ready for Collection";
-
-    $message = "
-    <div style='font-family:Arial, Helvetica, sans-serif; background:#f4f6f8; padding:20px;'>
-
-        <div style='max-width:600px; margin:auto; background:#ffffff; border-radius:8px; overflow:hidden; border:1px solid #e5e7eb;'>
-
-            <!-- Header -->
-            <div style='background:#1e293b; color:#ffffff; padding:16px 24px; font-size:18px; font-weight:bold;'>
-                VTS e-Library System
-            </div>
-
-            <!-- Body -->
-            <div style='padding:24px; color:#334155; font-size:14px;'>
-
-                <p style='margin-top:0;'>Your requested file is now ready for collection.</p>
-
-                <table style='width:100%; border-collapse:collapse; margin-top:15px;'>
-
-                    <tr>
-                        <td style='padding:8px; background:#f8fafc; border:1px solid #e2e8f0; width:35%; font-weight:bold;'>
-                            File Name
-                        </td>
-                        <td style='padding:8px; border:1px solid #e2e8f0;'>
-                            {$req['file_name']}
-                        </td>
-                    </tr>
-
-                    <tr>
-                        <td style='padding:8px; background:#f8fafc; border:1px solid #e2e8f0; font-weight:bold;'>
-                            Request ID
-                        </td>
-                        <td style='padding:8px; border:1px solid #e2e8f0;'>
-                            {$requestId}
-                        </td>
-                    </tr>
-
-                    <tr>
-                        <td style='padding:8px; background:#f8fafc; border:1px solid #e2e8f0; font-weight:bold;'>
-                            Due Date
-                        </td>
-                        <td style='padding:8px; border:1px solid #e2e8f0;'>
-                            {$dueDate}
-                        </td>
-                    </tr>
-
-                </table>
-
-                <p style='margin-top:20px;'>
-                    Please collect the file from the archive counter. Kindly ensure the file is returned before the due date.
-                </p>
-
-            </div>
-
-            <!-- Footer -->
-            <div style='background:#f8fafc; padding:14px 24px; font-size:12px; color:#64748b; text-align:center;'>
-                This is an automated message from <b>VTS e-Library System</b>.
-            </div>
-
-        </div>
-
-    </div>
-    ";
-   
-    sendEmail($user['email'],$subject,$message);
-}
-
-    if($action == 'assign_restoration' && $req['current_status']=='Return Requested') {
-        $pdo->prepare("
-            UPDATE requests
-            SET current_status='Restoration Assigned',
-                assigned_to=?,
-                retrieval_assigned_at=NOW()
-            WHERE id=?
-        ")->execute([$staffId,$requestId]);
-        logHistory($pdo,$requestId,$req['file_id'],'Restoration Assigned',$userId);
+    if ($action == 'bulk_release_file') {
+        $ids = normalizeRequestIds($_POST['request_ids'] ?? []);
+        $ok = 0;
+        foreach ($ids as $rid) {
+            $result = processReleaseFile($pdo, $rid, $userId);
+            if ($result['ok']) {
+                $ok++;
+            }
+        }
+        if ($ok > 0) {
+            $_SESSION['success'] = "$ok file(s) released.";
+        }
+        header("Location: ../admin/requests.php");
+        exit;
     }
 
-    if($action == 'complete_transaction' && $req['current_status']=='File Restored') {
-        $pdo->prepare("
-            UPDATE requests 
-            SET current_status='Completed',
-                status='returned',
-                return_date = COALESCE(return_date, NOW()),
-                updated_at=NOW()
-            WHERE id=?
-        ")->execute([$requestId]);
-
-        $pdo->prepare("
-            UPDATE files 
-            SET status='available' 
-            WHERE id=?
-        ")->execute([$req['file_id']]);
-
-        logHistory($pdo,$requestId,$req['file_id'],'Completed',$userId);
+    if ($action == 'bulk_assign_restoration') {
+        $ids = normalizeRequestIds($_POST['request_ids'] ?? []);
+        $ok = 0;
+        foreach ($ids as $rid) {
+            $result = processAssignRestoration($pdo, $rid, $staffId, $userId);
+            if ($result['ok']) {
+                $ok++;
+            }
+        }
+        if ($ok > 0) {
+            $_SESSION['success'] = "$ok restoration assignment(s) completed.";
+        }
+        header("Location: ../admin/requests.php");
+        exit;
     }
 
-}
-
-# ===============================
-# STAFF ACTIONS
-# ===============================
-if(in_array($role,['staff','operations'])) {
-
-    if($action=='confirm_retrieval' && $req['current_status']=='Retrieval Assigned') {
-        $pdo->prepare("UPDATE requests SET current_status='File Retrieved', retrieved_at=NOW() WHERE id=?")->execute([$requestId]);
-        logHistory($pdo,$requestId,$req['file_id'],'File Retrieved',$userId);
+    if ($action == 'bulk_complete_transaction') {
+        $ids = normalizeRequestIds($_POST['request_ids'] ?? []);
+        $ok = 0;
+        foreach ($ids as $rid) {
+            $result = processCompleteTransaction($pdo, $rid, $userId);
+            if ($result['ok']) {
+                $ok++;
+            }
+        }
+        if ($ok > 0) {
+            $_SESSION['success'] = "$ok transaction(s) completed.";
+        }
+        header("Location: ../admin/requests.php");
+        exit;
     }
 
-    if($action=='confirm_restoration' && $req['current_status']=='Restoration Assigned') {
-        $pdo->prepare("
-            UPDATE requests 
-            SET current_status='File Restored',
-                status='returned',
-                return_date=NOW(),
-                updated_at=NOW()
-            WHERE id=?
-        ")->execute([$requestId]);
-
-        $pdo->prepare("
-            UPDATE files 
-            SET status='available' 
-            WHERE id=?
-        ")->execute([$req['file_id']]);
-
-        logHistory($pdo,$requestId,$req['file_id'],'File Restored',$userId);
+    # --- Single admin actions ---
+    if ($requestId) {
+        if ($action == 'assign_retrieval') {
+            processAssignRetrieval($pdo, $requestId, $staffId, $userId);
+        }
+        if ($action == 'release_file') {
+            processReleaseFile($pdo, $requestId, $userId);
+        }
+        if ($action == 'assign_restoration') {
+            processAssignRestoration($pdo, $requestId, $staffId, $userId);
+        }
+        if ($action == 'complete_transaction') {
+            processCompleteTransaction($pdo, $requestId, $userId);
+        }
     }
-}
-if($role == 'admin'){
+
     header("Location: ../admin/requests.php");
-}
-elseif($role == 'operations' || $role == 'staff'){
-    header("Location: ../operations/dashboard.php");
-}
-elseif($role == 'hod'){
-    header("Location: ../hod/approvals.php");
-}
-else{
-    header("Location: ../requestor/my_files.php");
+    exit;
 }
 
+# ===============================
+# STAFF / OPERATIONS ACTIONS
+# ===============================
+if (in_array($role, ['staff', 'operations'])) {
+    if (!$requestId) {
+        header("Location: ../operations/dashboard.php");
+        exit;
+    }
+
+    $stmt = $pdo->prepare("
+        SELECT r.*, f.file_name
+        FROM requests r
+        JOIN files f ON r.file_id = f.id
+        WHERE r.id=?
+    ");
+    $stmt->execute([$requestId]);
+    $req = $stmt->fetch(PDO::FETCH_ASSOC);
+
+    if ($req) {
+        if ($action == 'confirm_retrieval' && $req['current_status'] == 'Retrieval Assigned') {
+            $pdo->prepare("UPDATE requests SET current_status='File Retrieved', retrieved_at=NOW() WHERE id=?")->execute([$requestId]);
+            logHistory($pdo, $requestId, $req['file_id'], 'File Retrieved', $userId);
+        }
+
+        if ($action == 'confirm_restoration' && $req['current_status'] == 'Restoration Assigned') {
+            $pdo->prepare("
+                UPDATE requests
+                SET current_status='File Restored',
+                    status='returned',
+                    return_date=NOW(),
+                    updated_at=NOW()
+                WHERE id=?
+            ")->execute([$requestId]);
+
+            $pdo->prepare("UPDATE files SET status='available' WHERE id=?")->execute([$req['file_id']]);
+            logHistory($pdo, $requestId, $req['file_id'], 'File Restored', $userId);
+        }
+    }
+
+    header("Location: ../operations/dashboard.php");
+    exit;
+}
+
+header("Location: ../requestor/my_files.php");
 exit;
-?>

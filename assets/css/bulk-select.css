@@ -1,0 +1,609 @@
+/**
+ * Bulk Selection Design System
+ * Shared visual language: Linear / Notion / Google Workspace
+ */
+
+:root {
+    --bs-blue: #3b82f6;
+    --bs-blue-hover: #2563eb;
+    --bs-blue-soft: rgba(59, 130, 246, 0.08);
+    --bs-blue-border: rgba(59, 130, 246, 0.45);
+    --bs-ink: #0f172a;
+    --bs-muted: #64748b;
+    --bs-line: #e2e8f0;
+    --bs-surface: #ffffff;
+    --bs-surface-soft: #f8fafc;
+    --bs-radius: 12px;
+    --bs-radius-pill: 10px;
+    --bs-shadow: 0 1px 2px rgba(15, 23, 42, 0.04), 0 4px 16px rgba(15, 23, 42, 0.04);
+    --bs-shadow-lg: 0 8px 30px rgba(15, 23, 42, 0.12), 0 2px 8px rgba(15, 23, 42, 0.06);
+    --bs-font: 'IBM Plex Sans', 'Segoe UI', system-ui, -apple-system, sans-serif;
+    --bs-ease: cubic-bezier(0.22, 1, 0.36, 1);
+    --bs-check: 16px;
+}
+
+/* Only reserve scroll room when the floating bar is actually visible */
+body.bulk-toolbar-visible {
+    padding-bottom: 88px;
+}
+
+/* ------------------------------------------------------------------
+   Page header (title only — no select controls)
+------------------------------------------------------------------ */
+.page-header-row {
+    display: block;
+    margin-bottom: 28px;
+}
+
+.page-header-row .page-title {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.page-header-row .page-title h1 {
+    font-family: var(--bs-font);
+    font-size: 1.5rem;
+    font-weight: 650;
+    letter-spacing: -0.025em;
+    color: var(--bs-ink);
+    margin: 0;
+    line-height: 1.2;
+}
+
+.page-header-row .page-title p {
+    margin: 0;
+    color: var(--bs-muted);
+    font-size: 0.9rem;
+    font-weight: 400;
+    line-height: 1.45;
+}
+
+/* ------------------------------------------------------------------
+   List controls card — search/filter + bulk toolbar
+------------------------------------------------------------------ */
+.list-controls-card,
+.filter-bar-card.list-controls-card,
+.card.filter-card.list-controls-card {
+    background: var(--bs-surface);
+    border: 1px solid #e8eef5;
+    border-radius: 12px;
+    box-shadow: var(--bs-shadow);
+    padding: 0;
+    /* Must stay visible: Filter Status dropdown is position:absolute and extends outside this card */
+    overflow: visible;
+    margin-bottom: 16px;
+}
+
+.list-controls-card .filter-form-inline,
+.list-controls-card .filter-form {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+    flex-wrap: wrap;
+    padding: 12px 14px;
+    border-radius: 12px 12px 0 0;
+}
+
+.list-controls-card .bulk-list-toolbar {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    min-height: 44px;
+    padding: 0 14px;
+    border-top: 1px solid #f1f5f9;
+    background: #fcfcfd;
+    font-family: var(--bs-font);
+    border-radius: 0 0 12px 12px;
+}
+
+.bulk-list-toolbar .bulk-mode-control {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    margin: 0;
+    cursor: pointer;
+    user-select: none;
+    font-size: 0.8125rem;
+    font-weight: 500;
+    color: #334155;
+}
+
+.bulk-list-toolbar .bulk-mode-label {
+    color: #334155;
+}
+
+.bulk-list-toolbar.is-selecting .bulk-mode-label {
+    color: var(--bs-ink);
+    font-weight: 550;
+}
+
+.bulk-list-toolbar .bulk-select-hint,
+.bulk-list-toolbar #bulkStripCount {
+    margin-left: auto;
+    font-size: 0.8125rem;
+    font-weight: 500;
+    color: var(--bs-muted);
+    letter-spacing: -0.01em;
+    font-variant-numeric: tabular-nums;
+}
+
+.bulk-list-toolbar .bulk-cancel-btn {
+    appearance: none;
+    height: 30px;
+    padding: 0 12px;
+    border-radius: 7px;
+    border: 1px solid var(--bs-line);
+    background: var(--bs-surface);
+    color: var(--bs-muted);
+    font-family: var(--bs-font);
+    font-size: 0.75rem;
+    font-weight: 550;
+    cursor: pointer;
+    transition:
+        background 0.15s var(--bs-ease),
+        color 0.15s var(--bs-ease),
+        border-color 0.15s var(--bs-ease);
+}
+
+.bulk-list-toolbar .bulk-cancel-btn:hover {
+    background: var(--bs-surface-soft);
+    color: var(--bs-ink);
+    border-color: #cbd5e1;
+}
+
+.list-controls-card > .bulk-list-toolbar:first-child {
+    border-top: none;
+    border-radius: 12px;
+}
+
+.list-controls-card > .filter-form-inline:last-child,
+.list-controls-card > .filter-form:last-child {
+    border-radius: 12px;
+}
+
+/* ------------------------------------------------------------------
+   Custom checkboxes — quiet, premium
+------------------------------------------------------------------ */
+.bulk-checkbox-wrap {
+    display: none;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    width: 28px;
+    margin-right: 4px;
+}
+
+.select-mode-active .bulk-checkbox-wrap {
+    display: flex;
+    animation: bsFadeIn 0.2s var(--bs-ease);
+}
+
+.bulk-checkbox,
+#selectAllBulk {
+    appearance: none;
+    -webkit-appearance: none;
+    width: var(--bs-check);
+    height: var(--bs-check);
+    margin: 0;
+    border: 1.5px solid #cbd5e1;
+    border-radius: 4px;
+    background: var(--bs-surface);
+    cursor: pointer;
+    position: relative;
+    transition:
+        background 0.15s var(--bs-ease),
+        border-color 0.15s var(--bs-ease),
+        box-shadow 0.15s var(--bs-ease),
+        transform 0.12s var(--bs-ease);
+    flex-shrink: 0;
+}
+
+.bulk-checkbox:hover,
+#selectAllBulk:hover {
+    border-color: #94a3b8;
+}
+
+.bulk-checkbox:checked,
+#selectAllBulk:checked {
+    background: var(--bs-blue);
+    border-color: var(--bs-blue);
+}
+
+.bulk-checkbox:checked::after,
+#selectAllBulk:checked::after {
+    content: '';
+    position: absolute;
+    left: 4.5px;
+    top: 1.5px;
+    width: 4px;
+    height: 8px;
+    border: solid #fff;
+    border-width: 0 1.5px 1.5px 0;
+    transform: rotate(45deg);
+}
+
+#selectAllBulk:indeterminate {
+    background: var(--bs-blue);
+    border-color: var(--bs-blue);
+}
+
+#selectAllBulk:indeterminate::after {
+    content: '';
+    position: absolute;
+    left: 3px;
+    top: 6px;
+    width: 8px;
+    height: 1.5px;
+    background: #fff;
+    border: none;
+    transform: none;
+}
+
+.bulk-checkbox:focus-visible,
+#selectAllBulk:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.25);
+}
+
+/* ------------------------------------------------------------------
+   Selectable cards / rows
+------------------------------------------------------------------ */
+.file-card.bulk-item {
+    border: 1px solid #e8eef5;
+    border-radius: var(--bs-radius);
+    background: var(--bs-surface);
+    box-shadow: var(--bs-shadow);
+    transition:
+        border-color 0.25s var(--bs-ease),
+        background 0.25s var(--bs-ease),
+        box-shadow 0.25s var(--bs-ease),
+        transform 0.25s var(--bs-ease);
+}
+
+.file-card.bulk-item:hover {
+    border-color: #d4dce8;
+    box-shadow: 0 4px 14px rgba(15, 23, 42, 0.07);
+    transform: translateY(-2px);
+}
+
+.select-mode-active .file-card.bulk-item[data-selectable="1"] {
+    cursor: pointer;
+}
+
+.select-mode-active .file-card.bulk-item[data-selectable="1"]:hover {
+    border-color: rgba(59, 130, 246, 0.4);
+    background: rgba(59, 130, 246, 0.04);
+    transform: translateY(-2px);
+}
+
+.select-mode-active .file-card.bulk-item.is-selected {
+    border-color: var(--bs-blue-border);
+    background: var(--bs-blue-soft);
+    box-shadow: 0 4px 16px rgba(59, 130, 246, 0.12);
+    transform: translateY(0);
+}
+
+.select-mode-active .file-card.bulk-item.is-selected:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 22px rgba(59, 130, 246, 0.16);
+}
+
+/* Tables */
+.workflow-table .bulk-item,
+.modern-table .bulk-item,
+.approvals-table .bulk-item {
+    transition: background 0.18s var(--bs-ease), box-shadow 0.18s var(--bs-ease);
+}
+
+.select-mode-active .workflow-table .bulk-item[data-selectable="1"],
+.select-mode-active .modern-table .bulk-item[data-selectable="1"],
+.select-mode-active .approvals-table .bulk-item[data-selectable="1"] {
+    cursor: pointer;
+}
+
+.select-mode-active .workflow-table .bulk-item[data-selectable="1"]:hover td,
+.select-mode-active .modern-table .bulk-item[data-selectable="1"]:hover td,
+.select-mode-active .approvals-table .bulk-item[data-selectable="1"]:hover td {
+    background: rgba(59, 130, 246, 0.03);
+}
+
+.workflow-table .bulk-item.is-selected td,
+.modern-table .bulk-item.is-selected td,
+.approvals-table .bulk-item.is-selected td {
+    background: var(--bs-blue-soft) !important;
+}
+
+.workflow-table .bulk-item.is-selected,
+.modern-table .bulk-item.is-selected,
+.approvals-table .bulk-item.is-selected {
+    box-shadow: inset 3px 0 0 var(--bs-blue);
+}
+
+.select-mode-active .bulk-item .per-row-actions {
+    opacity: 0.4;
+    pointer-events: none;
+    transition: opacity 0.18s var(--bs-ease);
+}
+
+.select-mode-active .bulk-item.is-selected .per-row-actions {
+    opacity: 0;
+}
+
+/* Check column collapse outside select mode */
+.workflow-table .col-check,
+.approvals-table .col-check,
+.modern-table .col-check {
+    width: 0;
+    padding-left: 0 !important;
+    padding-right: 0 !important;
+    overflow: hidden;
+    border: none;
+    transition: width 0.2s var(--bs-ease), padding 0.2s var(--bs-ease);
+}
+
+.select-mode-active .workflow-table .col-check,
+.select-mode-active .approvals-table .col-check,
+.select-mode-active .modern-table .col-check {
+    width: 44px;
+    padding-left: 16px !important;
+    padding-right: 8px !important;
+    overflow: visible;
+}
+
+/* ------------------------------------------------------------------
+   Floating sticky action bar — light, content-hugging
+------------------------------------------------------------------ */
+.bulk-toolbar {
+    position: fixed;
+    left: 50%;
+    bottom: 24px;
+    z-index: 1200;
+    display: inline-flex;
+    align-items: center;
+    gap: 16px;
+    width: max-content;
+    max-width: min(560px, calc(100vw - 32px));
+    padding: 10px 10px 10px 16px;
+    background: rgba(255, 255, 255, 0.94);
+    backdrop-filter: blur(16px) saturate(1.4);
+    -webkit-backdrop-filter: blur(16px) saturate(1.4);
+    border: 1px solid rgba(226, 232, 240, 0.95);
+    border-radius: 16px;
+    box-shadow: var(--bs-shadow-lg);
+    font-family: var(--bs-font);
+    color: var(--bs-ink);
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+    transform: translateX(-50%) translateY(12px);
+    transition:
+        opacity 0.25s var(--bs-ease),
+        transform 0.25s var(--bs-ease),
+        visibility 0.25s;
+}
+
+.bulk-toolbar.is-visible {
+    opacity: 1;
+    visibility: visible;
+    pointer-events: auto;
+    transform: translateX(-50%) translateY(0);
+}
+
+/* Ensure [hidden] always wins over display utilities inside the toolbar */
+.bulk-toolbar [hidden] {
+    display: none !important;
+}
+
+.bulk-toolbar-count {
+    font-size: 0.8125rem;
+    font-weight: 550;
+    letter-spacing: -0.015em;
+    color: var(--bs-ink);
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+}
+
+.bulk-toolbar-actions {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-wrap: nowrap;
+    justify-content: flex-end;
+}
+
+.bulk-toolbar .btn-bulk,
+.bulk-action-form .btn-bulk {
+    appearance: none;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    height: 32px;
+    padding: 0 12px;
+    border-radius: 8px;
+    font-family: var(--bs-font);
+    font-size: 0.75rem;
+    font-weight: 550;
+    letter-spacing: -0.01em;
+    border: 1px solid transparent;
+    cursor: pointer;
+    white-space: nowrap;
+    transition:
+        background 0.16s var(--bs-ease),
+        border-color 0.16s var(--bs-ease),
+        color 0.16s var(--bs-ease),
+        box-shadow 0.16s var(--bs-ease),
+        transform 0.12s var(--bs-ease);
+}
+
+.bulk-toolbar .btn-bulk:active {
+    transform: scale(0.98);
+}
+
+.bulk-toolbar .btn-bulk-ghost {
+    background: transparent;
+    color: var(--bs-muted);
+    border-color: var(--bs-line);
+}
+
+.bulk-toolbar .btn-bulk-ghost:hover {
+    background: var(--bs-surface-soft);
+    color: var(--bs-ink);
+    border-color: #cbd5e1;
+}
+
+.bulk-toolbar .btn-bulk-primary {
+    background: var(--accent, var(--bs-blue));
+    color: #fff;
+    border-color: transparent;
+    box-shadow: 0 1px 2px rgba(37, 99, 235, 0.22);
+}
+
+.bulk-toolbar .btn-bulk-primary:hover {
+    background: var(--bs-blue-hover);
+}
+
+.bulk-toolbar .btn-bulk-success {
+    background: #10b981;
+    color: #fff;
+    border-color: #10b981;
+}
+
+.bulk-toolbar .btn-bulk-success:hover {
+    background: #059669;
+    border-color: #059669;
+}
+
+.bulk-toolbar .btn-bulk-danger {
+    background: #fff;
+    color: #dc2626;
+    border-color: #fecaca;
+}
+
+.bulk-toolbar .btn-bulk-danger:hover {
+    background: #fef2f2;
+    border-color: #fca5a5;
+}
+
+.bulk-toolbar .btn-bulk-dark {
+    background: #334155;
+    color: #fff;
+    border-color: #334155;
+}
+
+.bulk-toolbar .btn-bulk-dark:hover {
+    background: #1e293b;
+}
+
+.bulk-toolbar .bulk-staff-select {
+    height: 32px;
+    padding: 0 8px;
+    border-radius: 8px;
+    border: 1px solid var(--bs-line);
+    background: var(--bs-surface);
+    color: var(--bs-ink);
+    font-family: var(--bs-font);
+    font-size: 0.75rem;
+    min-width: 120px;
+    max-width: 160px;
+}
+
+.bulk-action-form {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.bulk-mixed-hint {
+    font-size: 0.7rem;
+    font-weight: 500;
+    color: #b45309;
+    background: #fffbeb;
+    border: 1px solid #fde68a;
+    padding: 5px 8px;
+    border-radius: 7px;
+    white-space: nowrap;
+}
+
+/* ------------------------------------------------------------------
+   Flash banners
+------------------------------------------------------------------ */
+.flash-banner {
+    padding: 12px 16px;
+    border-radius: 10px;
+    margin-bottom: 16px;
+    font-family: var(--bs-font);
+    font-size: 0.875rem;
+    font-weight: 500;
+}
+
+.flash-banner.success {
+    background: #ecfdf5;
+    color: #065f46;
+    border: 1px solid #a7f3d0;
+}
+
+.flash-banner.error {
+    background: #fef2f2;
+    color: #991b1b;
+    border: 1px solid #fecaca;
+}
+
+@keyframes bsFadeIn {
+    from { opacity: 0; transform: scale(0.92); }
+    to { opacity: 1; transform: scale(1); }
+}
+
+/* ------------------------------------------------------------------
+   Responsive
+------------------------------------------------------------------ */
+@media (max-width: 768px) {
+    .bulk-toolbar {
+        left: 12px;
+        right: 12px;
+        bottom: 16px;
+        width: auto;
+        max-width: none;
+        flex-direction: column;
+        align-items: stretch;
+        gap: 10px;
+        padding: 12px;
+        transform: translateX(0) translateY(10px);
+    }
+
+    .bulk-toolbar.is-visible {
+        transform: translateX(0) translateY(0);
+    }
+
+    .bulk-toolbar-actions {
+        width: 100%;
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 6px;
+        flex-wrap: wrap;
+    }
+
+    .bulk-toolbar .btn-bulk-ghost {
+        grid-column: 1 / -1;
+    }
+
+    .bulk-toolbar .bulk-staff-select,
+    .bulk-action-form {
+        width: 100%;
+        max-width: none;
+        grid-column: 1 / -1;
+    }
+
+    .bulk-action-form {
+        display: flex;
+        flex-direction: column;
+    }
+
+    .bulk-toolbar .btn-bulk {
+        width: 100%;
+    }
+
+    body.bulk-toolbar-visible {
+        padding-bottom: 128px;
+    }
+}
