@@ -167,7 +167,7 @@ function calculateDueDate($pdo, $startDate, $days = 3){
     return $date->format('Y-m-d');
 }
 
-function sendEmail($to,$subject,$body){
+function sendEmail($to, $subject, $body){
 
     $mail = new PHPMailer(true);
 
@@ -192,8 +192,14 @@ function sendEmail($to,$subject,$body){
 
         $mail->send();
 
+        echo "EMAIL SENT";
+        exit;
+
     } catch (Exception $e) {
-        error_log("Mail error: " . $mail->ErrorInfo);
+
+        echo "EMAIL FAILED<br>";
+        echo $mail->ErrorInfo;
+        exit;
     }
 }
 ?>

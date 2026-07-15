@@ -277,18 +277,14 @@ require_once '../includes/header.php';
                         $dueDate = $row['due_date'] ?? null;
 
                         $overDue = (
-                            $row['current_status'] === 'Released' &&
+                            $statusKey === 'Released' &&
                             $dueDate &&
                             date('Y-m-d') > date('Y-m-d', strtotime($dueDate))
                         );
 
-                        $canReturn = ($row['current_status'] === 'Released');
-
-                        $canExtend = (
-                            $row['current_status'] === 'Released' &&
-                            !$overDue &&
-                            $row['extension_count'] < 2
-                        );
+                        // Same gates as original Return File / Extend
+                        $canReturn = ($statusKey === 'Released');
+                        $canExtend = ($canReturn && !$overDue && $row['extension_count'] < 2);
                     ?>
 
                     <div class="file-card bulk-item <?= $overDue ? 'is-overdue' : '' ?>"
@@ -379,6 +375,15 @@ require_once '../includes/header.php';
                             </div>
 
                             <div class="action-buttons">
+                                <?php if($canReturn): ?>
+                                    <form method="POST" action="../actions/request_actions.php" onsubmit="return confirm('Confirm return request for this file?');" style="display:inline;" class="no-bulk-toggle">
+                                        <input type="hidden" name="request_id" value="<?= $row['id'] ?>">
+                                        <input type="hidden" name="action" value="request_return">
+                                        <input type="hidden" name="redirect_to" value="department_files">
+                                        <button class="btn-sm primary">Return File</button>
+                                    </form>
+                                <?php endif; ?>
+
                                 <?php if($canExtend): ?>
                                     <form method="POST" action="../actions/request_actions.php" onsubmit="return confirm('Request 3-day extension for this file?');" style="display:inline;" class="no-bulk-toggle">
                                         <input type="hidden" name="request_id" value="<?= $row['id'] ?>">

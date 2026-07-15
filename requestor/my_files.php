@@ -46,6 +46,7 @@ if (!empty($statusFilter)) {
 $statusConfig = [
     'Requested'            => ['📝', 'Requested', 'bg-blue-100 text-blue-800', 'Requested'],
     'Pending HOD Approval' => ['⏳', 'Pending HOD', 'bg-amber-100 text-amber-800', 'Requested'],
+    'Extension Requested'  => ['⏳', 'Extension Requested', 'bg-amber-100 text-amber-800', 'Requested'],
     'Approved by HOD'      => ['✅', 'Approved', 'bg-green-100 text-green-800', 'Approved'],
     'Retrieval Assigned'   => ['🛠️', 'Processing', 'bg-orange-100 text-orange-800', 'Processing'],
     'File Retrieved'       => ['🛠️', 'Processing', 'bg-orange-100 text-orange-800', 'Processing'],
@@ -141,9 +142,14 @@ if (!empty($statusFilter)) {
 $stmt->execute();
 $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
+// Count returnable rows with the same gate as original Return File (Released, incl. overdue).
 $releasedCount = 0;
 foreach ($rows as $r) {
-    if (($r['current_status'] ?? '') === 'Released' && ($r['status'] ?? '') !== 'extension_requested') {
+    $key = $r['current_status'] ?? '';
+    if (($r['status'] ?? '') === 'extension_requested') {
+        $key = 'Extension Requested';
+    }
+    if ($key === 'Released') {
         $releasedCount++;
     }
 }
@@ -215,6 +221,7 @@ require_once '../includes/header.php';
                                 <div class="filter-section-title">Detailed Status</div>
                                 <div class="dropdown-options">
                                     <?php foreach($statusConfig as $key => $props): ?>
+                                        <?php if ($key === 'Extension Requested') continue; ?>
                                         <label class="option-item">
                                             <input type="checkbox" name="statuses[]" value="<?= $key ?>" 
                                                 <?= in_array($key, $statusFilter) ? 'checked' : '' ?> 
@@ -265,7 +272,7 @@ require_once '../includes/header.php';
                     $statusKey = $row['current_status'] ?: 'Cancelled';
 
                     if ($row['status'] === 'extension_requested') {
-                        $statusKey = 'Pending HOD Approval';
+                        $statusKey = 'Extension Requested';
                     }
                     if (!isset($statusConfig[$statusKey])) {
                         $statusKey = 'Cancelled';
@@ -284,22 +291,25 @@ require_once '../includes/header.php';
                         empty($row['extension_requested_at'])
                     );
 
+                    /*
+                     * Original gates — Return always for Released (incl. overdue); Extend only when not overdue.
+                     */
                     $overDue = (
-                        $row['current_status'] === 'Released' &&
+                        $statusKey === 'Released' &&
                         !empty($dueDate) &&
                         date('Y-m-d') > date('Y-m-d', strtotime($dueDate))
                     );
 
-                    $isReleased = ($row['current_status'] === 'Released' && $row['status'] !== 'extension_requested');
-                    $showCancel = in_array($row['current_status'], ['Requested', 'Pending HOD Approval'], true);
-                    $showExtend = ($isReleased && !$overDue && $row['extension_count'] < 2);
+                    $canReturn  = ($statusKey === 'Released');
+                    $showCancel = in_array($statusKey, ['Requested', 'Pending HOD Approval'], true);
+                    $showExtend = ($canReturn && !$overDue && $row['extension_count'] < 2);
                 ?>
                     <div class="file-card bulk-item <?= $overDue ? 'is-overdue' : '' ?>"
-                         data-selectable="<?= $isReleased ? '1' : '0' ?>"
+                         data-selectable="<?= $canReturn ? '1' : '0' ?>"
                          data-request-id="<?= (int)$row['id'] ?>">
                         <div class="card-main">
 
-                            <?php if ($isReleased): ?>
+                            <?php if ($canReturn): ?>
                             <div class="bulk-checkbox-wrap">
                                 <input type="checkbox"
                                        class="bulk-checkbox"
@@ -342,7 +352,7 @@ require_once '../includes/header.php';
                                             <?php endif; ?>
                                         </span>
 
-                                        <?= ($overDue && $isReleased)
+                                        <?= ($overDue && $canReturn)
                                             ? '<span class="overdue-alert">⚠ Overdue</span>'
                                             : '' ?>
                                     </div>
@@ -377,6 +387,14 @@ require_once '../includes/header.php';
                             </div>
 
                             <div class="action-buttons">
+                                <?php if($canReturn): ?>
+                                    <form method="POST" action="../actions/request_actions.php" onsubmit="return confirm('Confirm return request?');" class="no-bulk-toggle">
+                                        <input type="hidden" name="request_id" value="<?= $row['id'] ?>">
+                                        <input type="hidden" name="action" value="request_return">
+                                        <button class="btn-sm primary">Return File</button>
+                                    </form>
+                                <?php endif; ?>
+
                                 <?php if($showCancel): ?>
                                     <form method="POST" action="../actions/request_actions.php" onsubmit="return confirm('Cancel this request?');" class="no-bulk-toggle">
                                         <input type="hidden" name="request_id" value="<?= $row['id'] ?>">
