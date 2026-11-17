@@ -40,6 +40,7 @@ while($row = $stmt->fetch(PDO::FETCH_ASSOC)){
     VTS e-Library System
     ";
 
+    error_log('[REMINDER] request=' . $row['id'] . ' email=[' . $row['email'] . ']');
     sendEmail($row['email'],$subject,$message);
 
     # mark reminder as sent
@@ -54,17 +55,39 @@ while($row = $stmt->fetch(PDO::FETCH_ASSOC)){
 # 2. OVERDUE FILE CHECK
 # =================================================
 
-$stmt = $pdo->query("
-SELECT r.id, u.email, u.full_name, f.file_name, r.due_date
+error_log('entered overdue section');
+
+$overdueSql = "
+SELECT r.id, u.email, u.full_name, f.file_name, r.due_date, r.current_status, r.status
 FROM requests r
 JOIN users u ON r.user_id = u.id
 JOIN files f ON r.file_id = f.id
 WHERE r.current_status = 'Released'
-AND r.due_date < CURDATE()
-AND r.status != 'overdue'
-");
+AND DATE(r.due_date) < CURDATE()
+AND COALESCE(r.status, '') <> 'overdue'
+";
 
-while($row = $stmt->fetch(PDO::FETCH_ASSOC)){
+error_log('overdue SQL: ' . preg_replace('/\s+/', ' ', trim($overdueSql)));
+
+try {
+    $stmt = $pdo->query($overdueSql);
+    $overdueRows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+} catch (PDOException $e) {
+    error_log('PDO exception fetching overdue candidates: ' . $e->getMessage());
+    $overdueRows = [];
+}
+
+error_log('exact SQL query result count: ' . count($overdueRows));
+
+foreach ($overdueRows as $row) {
+
+    error_log('processing request id: ' . $row['id']);
+    error_log(
+        'request values id=' . $row['id']
+        . ' current_status=' . var_export($row['current_status'] ?? null, true)
+        . ' status=' . var_export($row['status'] ?? null, true)
+        . ' due_date=' . var_export($row['due_date'] ?? null, true)
+    );
 
     $subject = "OVERDUE: File Must Be Returned Immediately";
 
@@ -82,13 +105,26 @@ while($row = $stmt->fetch(PDO::FETCH_ASSOC)){
     VTS e-Library System
     ";
 
-    sendEmail($row['email'],$subject,$message);
+    error_log('[cron] var_export($row) = ' . var_export($row, true));
+    error_log('[OVERDUE] request=' . $row['id'] . ' email=[' . $row['email'] . ']');
+    error_log('[cron] calling sendEmail');
+    $sent = sendEmail($row['email'], $subject, $message);
+    error_log('[cron] sendEmail returned: ' . ($sent ? 'TRUE' : 'FALSE'));
 
-    # update request status to overdue
-    $pdo->prepare("
-        UPDATE requests
-        SET status = 'overdue'
-        WHERE id = ?
-    ")->execute([$row['id']]);
+    if ($sent) {
+        $stmt = $pdo->prepare("
+            UPDATE requests
+            SET status = 'overdue'
+            WHERE id = ?
+        ");
+        $ok = $stmt->execute([$row['id']]);
+        error_log('[cron] UPDATE returned: ' . ($ok ? 'TRUE' : 'FALSE'));
+
+        if (!$ok) {
+            error_log(print_r($stmt->errorInfo(), true));
+        }
+    }
 }
+
+error_log('exited overdue section');
 ?>

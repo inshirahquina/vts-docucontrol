@@ -16,6 +16,10 @@ $role = $_SESSION['active_role'] ?? $_SESSION['role'] ?? 'requestor';
 <a href="<?= BASE_URL ?>admin/requests.php" class="<?= ($current_page === 'requests.php') ? 'active' : ''; ?>">Manage Requests</a>
 <a href="<?= BASE_URL ?>admin/files.php" class="<?= ($current_page === 'files.php') ? 'active' : ''; ?>">Manage Files</a>
 <a href="<?= BASE_URL ?>admin/reports.php" class="<?= ($current_page === 'reports.php') ? 'active' : ''; ?>">Audit Logs</a>
+<a href="<?= BASE_URL ?>admin/email_logs.php">
+    <i class="fas fa-envelope"></i>
+    <span>Email Activity Logs</span>
+</a>
 </div>
 
 <?php elseif ($role === 'hod'): ?>
@@ -46,6 +50,7 @@ $role = $_SESSION['active_role'] ?? $_SESSION['role'] ?? 'requestor';
 <a href="<?= BASE_URL ?>requestor/browse.php" class="<?= ($current_page === 'browse.php') ? 'active' : ''; ?>">Browse Files</a>
 <a href="<?= BASE_URL ?>requestor/my_files.php" class="<?= ($current_page === 'my_files.php') ? 'active' : ''; ?>">My Files</a>
 <a href="<?= BASE_URL ?>requestor/department_files.php" class="<?= ($current_page === 'department_files.php') ? 'active' : ''; ?>">Department Files</a>
+
 </div>
 
 <?php endif; ?>
